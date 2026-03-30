@@ -2,9 +2,7 @@
 
 **English** | [中文](README_CN.md)
 
-A visual explorer for Go project code structure, inspired by Kubernetes concepts.
-
-Go source files are displayed as **Pods**, and their internal declarations (functions, structs, interfaces, constants, variables) are displayed as **Containers**. Import dependencies between files are rendered as edges in an interactive graph. Click any Container to view its source code directly in the browser.
+A visual explorer for Go project code structure, inspired by Kubernetes concepts. Go source files are displayed as **Pods**, their internal declarations (functions, structs, interfaces, constants, variables) as **Containers**. Import dependencies render as edges in an interactive graph. Click any Container to view source code directly.
 
 ## Screenshots
 

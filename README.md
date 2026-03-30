@@ -4,9 +4,11 @@
 
 A visual explorer for Go project code structure, inspired by Kubernetes concepts.
 
-Go source files are displayed as **Pods**, and their internal declarations (functions, structs, interfaces, constants, variables) are displayed as **Containers**. Import dependencies between files are rendered as edges in an interactive graph.
+Go source files are displayed as **Pods**, and their internal declarations (functions, structs, interfaces, constants, variables) are displayed as **Containers**. Import dependencies between files are rendered as edges in an interactive graph. Click any Container to view its source code directly in the browser.
 
 ## Screenshots
+
+> The screenshots below use [eino-examples](https://github.com/cloudwego/eino-examples) as the example project.
 
 ### Global Pod View
 All Go files in the project rendered as colored dots. Dot size reflects the number of containers; color groups files by package.

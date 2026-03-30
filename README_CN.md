@@ -4,9 +4,11 @@
 
 Go 项目代码结构可视化工具，借鉴 Kubernetes 概念进行展示。
 
-Go 源文件以 **Pod** 形式呈现，文件内部的声明（函数、结构体、接口、常量、变量）以 **Container** 形式呈现。文件间的 import 依赖关系以连线的方式在交互式图中渲染。
+Go 源文件以 **Pod** 形式呈现，文件内部的声明（函数、结构体、接口、常量、变量）以 **Container** 形式呈现。文件间的 import 依赖关系以连线的方式在交互式图中渲染。点击任意 Container 即可在浏览器中直接查看其源代码。
 
 ## 截图
+
+> 以下截图以 [eino-examples](https://github.com/cloudwego/eino-examples) 仓库作为示例项目。
 
 ### 全局 Pod 视图
 项目中所有 Go 文件渲染为彩色圆点。圆点大小反映 Container 数量，颜色按 package 分组。

@@ -11,17 +11,17 @@ A visual explorer for Go project code structure, inspired by Kubernetes concepts
 ### Global Pod View
 All Go files in the project rendered as colored dots. Dot size reflects the number of containers; color groups files by package.
 
-![Global View](docs/global-view.png)
+![Global View](docs/readme/global-view.png)
 
 ### Focused View
 Select a file in the sidebar tree to focus its Pod — only the selected Pod and its direct dependencies are shown, automatically relaid out in a mind-map tree pattern.
 
-![Focused View](docs/focused-view.png)
+![Focused View](docs/readme/focused-view.png)
 
 ### Expanded View
 Click the focused Pod again to expand — see all Containers inside the file. Struct methods are grouped under their receiver type.
 
-![Expanded View](docs/expanded-view.png)
+![Expanded View](docs/readme/expanded-view.png)
 
 ## Features
 

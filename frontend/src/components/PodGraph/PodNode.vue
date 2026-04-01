@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, onBeforeUnmount, nextTick, type ComponentPublicInstance } from 'vue'
+import { computed, watch, onBeforeUnmount, nextTick, type ComponentPublicInstance, ref } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import * as monaco from 'monaco-editor'
 import { useProjectStore } from '../../stores/project'
@@ -19,6 +19,8 @@ const props = defineProps<{
 }>()
 
 const store = useProjectStore()
+const cardRef = ref<HTMLElement | null>(null)
+const cardWidth = ref<number>(360)
 
 const isFocused = computed(() => store.focusedPodPath === props.data.pod.path)
 
@@ -86,6 +88,53 @@ const groupedContainers = computed<(Container | ContainerGroup)[]>(() => {
   return result
 })
 
+const cardStyle = computed(() => {
+  const baseWidth = cardWidth.value
+  return {
+    width: baseWidth + 'px',
+    minWidth: '260px',
+    maxWidth: '800px'
+  }
+})
+
+let isResizing = false
+let startX = 0
+let startWidth = 0
+let hasDragged = false
+let resizeStartTime = 0
+
+function startResize(e: MouseEvent) {
+  isResizing = true
+  hasDragged = false
+  resizeStartTime = Date.now()
+  startX = e.clientX
+  startWidth = cardRef.value?.offsetWidth || 360
+  document.addEventListener('mousemove', handleResize)
+  document.addEventListener('mouseup', stopResize)
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+function handleResize(e: MouseEvent) {
+  if (!isResizing) return
+  const deltaX = e.clientX - startX
+  if (Math.abs(deltaX) > 3) {
+    hasDragged = true
+  }
+  const newWidth = Math.max(260, Math.min(800, startWidth + deltaX))
+  cardWidth.value = newWidth
+}
+
+function stopResize() {
+  isResizing = false
+  document.removeEventListener('mousemove', handleResize)
+  document.removeEventListener('mouseup', stopResize)
+  // Clear hasDragged after a short delay to prevent the click that follows mouseup
+  setTimeout(() => {
+    hasDragged = false
+  }, 50)
+}
+
 const activeContainer = computed<Container | null>(() => {
   const containerName = store.containerStates[props.data.pod.path]?.activeContainer
   if (!containerName) return null
@@ -110,6 +159,11 @@ function isGroup(item: Container | ContainerGroup): item is ContainerGroup {
 }
 
 async function handleClick() {
+  // Prevent fold action if we just finished a resize drag
+  if (hasDragged) {
+    return
+  }
+
   const podPath = props.data.pod.path
 
   // 点击已聚焦的 Pod：展开它（focused → expanded）
@@ -242,11 +296,15 @@ function shortMethodName(fullName: string) {
 <template>
   <div
     v-if="data.isExpanded"
+    ref="cardRef"
     class="pod-card nopan nowheel"
+    :style="cardStyle"
     @click="handleClick"
   >
     <Handle type="target" :position="Position.Left" class="handle-hidden" />
     <Handle type="source" :position="Position.Right" class="handle-hidden" />
+
+    <div class="resize-handle" @mousedown="startResize" @click.stop title="Drag to resize"></div>
 
     <div class="card-header">
       <span class="card-package">{{ data.pod.package }}</span>
@@ -404,7 +462,23 @@ function shortMethodName(fullName: string) {
 .dot-label { font-size: 10px; color: #909399; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 .label-focused { color: #303133; font-weight: 600; font-size: 11px; }
 
-.pod-card { background: #fff; border: 2px solid #409eff; border-radius: 8px; padding: 10px 14px; min-width: 260px; max-width: 500px; cursor: pointer; box-shadow: 0 4px 20px rgba(64,158,255,.2); position: relative; }
+.pod-card { background: #fff; border: 2px solid #409eff; border-radius: 8px; padding: 10px 14px; min-width: 260px; max-width: 800px; cursor: pointer; box-shadow: 0 4px 20px rgba(64,158,255,.2); position: relative; }
+
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s;
+  border-radius: 0 6px 6px 0;
+}
+
+.resize-handle:hover {
+  background: rgba(64, 158, 255, 0.3);
+}
 
 .card-header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ebeef5; }
 .card-package { font-size: 11px; color: #909399; font-weight: 500; }

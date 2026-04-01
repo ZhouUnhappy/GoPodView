@@ -12,6 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.dev.pid"
 LOG_DIR="$SCRIPT_DIR/.dev/logs"
 VITE_PORT=5173
+COMMAND=""
 PROJECT_PATH=""
 GO_PORT=""
 
@@ -26,13 +27,7 @@ print_usage() {
 Usage:
   $0 start [--project <path>] [--port <port>] [--log <dir>]    Start frontend and backend
   $0 stop                                                      Stop frontend and backend (graceful shutdown)
-
-Examples:
-  $0 start
-  $0 start --project /path/to/my-go-project
-  $0 start --project /path/to/my-go-project --port 9000
-  $0 start --project /path/to/my-go-project --log /tmp/logs
-  $0 stop
+  $0 restart                                                   Restart frontend and backend
 EOF
 }
 
@@ -134,11 +129,10 @@ stop_dev() {
     print_info "All processes stopped"
 }
 
-# Main logic
-COMMAND=""
-PROJECT_PATH=""
-PORT=""
-LOG_DIR=""
+restart_dev() {
+    stop_dev
+    start_dev
+}
 
 while [ $# -gt 0 ]; do
     case $1 in
@@ -176,6 +170,9 @@ case "$COMMAND" in
         ;;
     stop)
         stop_dev
+        ;;
+    restart)
+        restart_dev
         ;;
     "")
         print_usage

@@ -11,9 +11,9 @@ import (
 )
 
 type Analyzer struct {
-	parser     *ProjectParser
-	importMap  map[string]string // import path -> relative file dir (package level)
-	pkgToPods  map[string][]string
+	parser    *ProjectParser
+	importMap map[string]string // import path -> relative file dir (package level)
+	pkgToPods map[string][]string
 }
 
 func NewAnalyzer(pp *ProjectParser) *Analyzer {
@@ -39,7 +39,7 @@ func (a *Analyzer) AnalyzeAll(goFiles []string) error {
 }
 
 func (a *Analyzer) buildPackageIndex() {
-	for relPath, pod := range a.parser.Pods {
+	for relPath := range a.parser.Pods {
 		dir := filepath.Dir(relPath)
 		a.pkgToPods[dir] = append(a.pkgToPods[dir], relPath)
 
@@ -47,8 +47,6 @@ func (a *Analyzer) buildPackageIndex() {
 		if modImportPath != "" {
 			a.importMap[modImportPath] = dir
 		}
-
-		_ = pod
 	}
 }
 
@@ -59,7 +57,7 @@ func (a *Analyzer) dirToImportPath(dir string) string {
 func (a *Analyzer) buildPodDependencies() {
 	for relPath, pod := range a.parser.Pods {
 		for _, imp := range pod.Imports {
-			if isStdLib(imp) || isExternal(imp, a.parser.Root) {
+			if isStdLib(imp) || isExternal(imp) {
 				continue
 			}
 
@@ -220,8 +218,7 @@ func isStdLib(importPath string) bool {
 	return !strings.Contains(importPath, ".")
 }
 
-func isExternal(importPath string, root string) bool {
-	_ = root
+func isExternal(importPath string) bool {
 	return false
 }
 

@@ -52,12 +52,11 @@ Click the focused Pod again to expand — see all Containers inside the file. St
 ## Quick Start
 
 ```bash
-# One command (requires Make, Go, Node.js)
-make run PROJECT=/path/to/your/go/project
+# Start backend and frontend in background
+./dev.sh start --go_port 8080 --vite_port 5173
 
-# Or start separately
-cd backend && go run main.go --project /path/to/your/go/project
-cd frontend && npm install && npm run dev
+# Stop services
+./dev.sh stop
 ```
 
 Open http://localhost:5173 in your browser.
@@ -99,6 +98,7 @@ GoPodView/
 │   │   ├── api/             # HTTP client
 │   │   └── types/           # TypeScript interfaces
 │   └── package.json
+├── dev.sh                   # Development startup script
 ├── Makefile
 └── README.md
 ```

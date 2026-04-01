@@ -14,10 +14,10 @@ import (
 )
 
 type ProjectParser struct {
-	Root    string
-	fset    *token.FileSet
-	Pods    map[string]*model.Pod
-	srcMap  map[string][]byte
+	Root   string
+	fset   *token.FileSet
+	Pods   map[string]*model.Pod
+	srcMap map[string][]byte
 }
 
 func NewProjectParser(root string) *ProjectParser {
@@ -177,7 +177,7 @@ func (p *ProjectParser) parseGenDecl(d *ast.GenDecl, podPath string, src []byte)
 				Pod:        podPath,
 				StartLine:  startPos.Line,
 				EndLine:    endPos.Line,
-				Signature:  string(d.Tok) + " (" + groupName + ")",
+				Signature:  d.Tok.String() + " (" + groupName + ")",
 				SourceCode: string(src[startPos.Offset:endPos.Offset]),
 			})
 		} else {
@@ -195,7 +195,7 @@ func (p *ProjectParser) parseGenDecl(d *ast.GenDecl, podPath string, src []byte)
 						Pod:        podPath,
 						StartLine:  startPos.Line,
 						EndLine:    endPos.Line,
-						Signature:  string(d.Tok) + " " + n.Name,
+						Signature:  d.Tok.String() + " " + n.Name,
 						SourceCode: string(src[startPos.Offset:endPos.Offset]),
 					})
 				}
@@ -249,4 +249,3 @@ func exprToString(expr ast.Expr) string {
 		return ""
 	}
 }
-

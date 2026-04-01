@@ -82,7 +82,7 @@ start_dev() {
     # Start frontend
     print_info "Starting frontend..."
     cd "$SCRIPT_DIR/frontend"
-    VITE_PORT=$VITE_PORT VITE_GO_PORT=$GO_PORT npm run dev > "$frontend_log" 2>&1 &
+    CI=true VITE_PORT=$VITE_PORT VITE_GO_PORT=$GO_PORT npm run dev > "$frontend_log" 2>&1 &
     FRONTEND_PID=$!
     echo "$FRONTEND_PID" >> "$PID_FILE"
     print_info "Frontend process ID: $FRONTEND_PID"

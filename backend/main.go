@@ -11,10 +11,11 @@ import (
 func main() {
 	projectPath := flag.String("project", "", "path to the Go project to analyze")
 	port := flag.Int("port", 8080, "HTTP server port")
+	frontendPort := flag.Int("frontend-port", 5173, "Frontend dev server port for CORS")
 	flag.Parse()
 
 	handler := api.NewHandler(*projectPath)
-	router := api.SetupRouter(handler)
+	router := api.SetupRouter(handler, *frontendPort)
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("GoPodView backend starting on %s", addr)

@@ -8,13 +8,13 @@
 
 set -e
 
+COMMAND=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.dev.pid"
 LOG_DIR="$SCRIPT_DIR/.dev/logs"
+
 VITE_PORT=5173
-COMMAND=""
-GO_PROJECT_PATH=""
-GO_PORT=""
+GO_PORT=8080
 GO_PARAMS=""
 
 # Color definitions
@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 print_usage() {
     cat << EOF
 Usage:
-  $0 start [--project <path>] [--port <port>] [--log <dir>]    Start frontend and backend
+  $0 start [--project <path>] [--vite_port <vite_port>] [--go_port <go_port>] [--log <dir>]    Start frontend and backend
   $0 stop                                                      Stop frontend and backend (graceful shutdown)
   $0 restart                                                   Restart frontend and backend
 EOF
@@ -61,11 +61,6 @@ start_dev() {
     print_info "Starting GoPodView..."
     print_info "Backend:  http://localhost:$GO_PORT"
     print_info "Frontend: http://localhost:$VITE_PORT"
-    if [ -n "$GO_PROJECT_PATH" ]; then
-        print_info "Project:  $GO_PROJECT_PATH"
-    else
-        print_warn "No project path provided. Use the frontend to load a project."
-    fi
     print_info "Logs:     $LOG_DIR"
     
     # Clear old PID file
@@ -74,6 +69,7 @@ start_dev() {
     # Start backend
     print_info "Starting backend..."
     cd "$SCRIPT_DIR/backend"
+	print_info "GO_PARAMS: $GO_PARAMS"
     go run main.go $GO_PARAMS > "$backend_log" 2>&1 &
     BACKEND_PID=$!
     echo "$BACKEND_PID" >> "$PID_FILE"
@@ -86,7 +82,7 @@ start_dev() {
     # Start frontend
     print_info "Starting frontend..."
     cd "$SCRIPT_DIR/frontend"
-    npm run dev > "$frontend_log" 2>&1 &
+    VITE_PORT=$VITE_PORT VITE_GO_PORT=$GO_PORT npm run dev > "$frontend_log" 2>&1 &
     FRONTEND_PID=$!
     echo "$FRONTEND_PID" >> "$PID_FILE"
     print_info "Frontend process ID: $FRONTEND_PID"
@@ -148,14 +144,16 @@ while [ $# -gt 0 ]; do
             ;;
         --project)
             GO_PROJECT_PATH="$2"
-			GO_PARAMS="$GO_PARAMS --project $GO_PROJECT_PATH"
             shift 2
             ;;
-        --port)
+        --go_port)
             GO_PORT="$2"
-			GO_PARAMS="$GO_PARAMS --port $GO_PORT"
             shift 2
             ;;
+		--vite_port)
+			VITE_PORT="$2"
+			shift 2
+			;;
         --log)
             LOG_DIR="$2"
             shift 2
@@ -166,6 +164,13 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+if [ -n "$GO_PROJECT_PATH" ]; then
+    GO_PARAMS="$GO_PARAMS --project $GO_PROJECT_PATH"
+fi
+
+GO_PARAMS="$GO_PARAMS --port $GO_PORT"
+GO_PARAMS="$GO_PARAMS --frontend-port $VITE_PORT"
 
 # Execute command
 case "$COMMAND" in

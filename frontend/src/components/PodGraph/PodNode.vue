@@ -101,12 +101,10 @@ let isResizing = false
 let startX = 0
 let startWidth = 0
 let hasDragged = false
-let resizeStartTime = 0
 
 function startResize(e: MouseEvent) {
   isResizing = true
   hasDragged = false
-  resizeStartTime = Date.now()
   startX = e.clientX
   startWidth = cardRef.value?.offsetWidth || 360
   document.addEventListener('mousemove', handleResize)

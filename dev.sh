@@ -13,8 +13,9 @@ PID_FILE="$SCRIPT_DIR/.dev.pid"
 LOG_DIR="$SCRIPT_DIR/.dev/logs"
 VITE_PORT=5173
 COMMAND=""
-PROJECT_PATH=""
+GO_PROJECT_PATH=""
 GO_PORT=""
+GO_PARAMS=""
 
 # Color definitions
 GREEN='\033[0;32m'
@@ -60,8 +61,8 @@ start_dev() {
     print_info "Starting GoPodView..."
     print_info "Backend:  http://localhost:$GO_PORT"
     print_info "Frontend: http://localhost:$VITE_PORT"
-    if [ -n "$PROJECT_PATH" ]; then
-        print_info "Project:  $PROJECT_PATH"
+    if [ -n "$GO_PROJECT_PATH" ]; then
+        print_info "Project:  $GO_PROJECT_PATH"
     else
         print_warn "No project path provided. Use the frontend to load a project."
     fi
@@ -73,11 +74,7 @@ start_dev() {
     # Start backend
     print_info "Starting backend..."
     cd "$SCRIPT_DIR/backend"
-    if [ -n "$PROJECT_PATH" ]; then
-        go run main.go --project "$project_path" --port "$port" > "$backend_log" 2>&1 &
-    else
-        go run main.go --port "$port" > "$backend_log" 2>&1 &
-    fi
+    go run main.go $GO_PARAMS > "$backend_log" 2>&1 &
     BACKEND_PID=$!
     echo "$BACKEND_PID" >> "$PID_FILE"
     print_info "Backend process ID: $BACKEND_PID"
@@ -107,8 +104,9 @@ stop_dev() {
     print_info "Stopping frontend and backend..."
     
     while IFS= read -r pid; do
+        print_info "Stopping process $pid..."
         if ps -p "$pid" > /dev/null 2>&1; then
-            print_info "Stopping process $pid..."
+            print_info "Process $pid is running, sending SIGTERM..."
             kill "$pid" 2>/dev/null || true
             
             # Wait for process to end (max 5 seconds)
@@ -144,12 +142,18 @@ while [ $# -gt 0 ]; do
             COMMAND="stop"
             shift
             ;;
+        restart)
+            COMMAND="restart"
+            shift
+            ;;
         --project)
-            PROJECT_PATH="$2"
+            GO_PROJECT_PATH="$2"
+			GO_PARAMS="$GO_PARAMS --project $GO_PROJECT_PATH"
             shift 2
             ;;
         --port)
             GO_PORT="$2"
+			GO_PARAMS="$GO_PARAMS --port $GO_PORT"
             shift 2
             ;;
         --log)

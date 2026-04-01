@@ -550,6 +550,25 @@ function normalizePositions(
     >
       <Background />
       <Controls />
+
+      <div class="vue-flow__panel vue-flow__panel-bottom-right">
+        <el-button-group size="small">
+          <el-button
+            :disabled="store.historyIndex <= 0"
+            @click="store.goBack()"
+            title="Cmd+["
+          >
+            &larr;
+          </el-button>
+          <el-button
+            :disabled="store.historyIndex >= store.navigationHistory.length - 1"
+            @click="store.goForward()"
+            title="Cmd+]"
+          >
+            &rarr;
+          </el-button>
+        </el-button-group>
+      </div>
     </VueFlow>
 
     <FloatingCodeTab
@@ -576,5 +595,12 @@ function normalizePositions(
   align-items: center;
   justify-content: center;
   height: 100%;
+}
+
+.vue-flow__panel-bottom-right {
+  position: absolute;
+  left: 52px;
+  bottom: 0px;
+  z-index: 10;
 }
 </style>

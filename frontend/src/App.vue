@@ -45,24 +45,6 @@ async function handleSetProject(path: string) {
         <span class="logo">GoPodView</span>
         <AppBreadcrumb />
       </div>
-      <div class="header-right">
-        <el-button-group size="small">
-          <el-button
-            :disabled="store.historyIndex <= 0"
-            @click="store.goBack()"
-            title="Cmd+["
-          >
-            &larr;
-          </el-button>
-          <el-button
-            :disabled="store.historyIndex >= store.navigationHistory.length - 1"
-            @click="store.goForward()"
-            title="Cmd+]"
-          >
-            &rarr;
-          </el-button>
-        </el-button-group>
-      </div>
     </el-header>
 
     <el-container class="app-body">
@@ -101,12 +83,6 @@ async function handleSetProject(path: string) {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .logo {

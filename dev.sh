@@ -38,7 +38,6 @@ print_info() {
 
 print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
-    print_usage
 }
 
 print_warn() {
@@ -51,6 +50,19 @@ start_dev() {
         print_error "LOG_DIR is not set"
         exit 1
     fi
+    
+    # Check if ports are available
+    check_port() {
+        local port=$1
+        local name=$2
+        if lsof -Pi :"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+            print_error "$name port $port is already in use"
+            echo "Run 'lsof -i :$port' to see which process is using it"
+            exit 1
+        fi
+    }
+    check_port "$VITE_PORT" "Frontend"
+    check_port "$GO_PORT" "Backend"
     
     # Create log directory if not exists
     mkdir -p "$LOG_DIR"
@@ -160,6 +172,7 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             print_error "Unknown argument: $1"
+			print_usage
             exit 1
             ;;
     esac
@@ -188,6 +201,7 @@ case "$COMMAND" in
         ;;
     *)
         print_error "Unknown command: $COMMAND"
+		print_usage
         exit 1
         ;;
 esac

@@ -14,7 +14,6 @@ LOG_DIR="$SCRIPT_DIR/.dev/logs"
 VITE_PORT=5173
 PROJECT_PATH=""
 GO_PORT=""
-LOG_DIR=""
 
 # Color definitions
 GREEN='\033[0;32m'
@@ -51,6 +50,12 @@ print_warn() {
 }
 
 start_dev() {
+    # Validate LOG_DIR
+    if [ -z "$LOG_DIR" ]; then
+        print_error "LOG_DIR is not set"
+        exit 1
+    fi
+    
     # Create log directory if not exists
     mkdir -p "$LOG_DIR"
     

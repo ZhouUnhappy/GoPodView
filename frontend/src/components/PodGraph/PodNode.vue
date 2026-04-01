@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount, nextTick, type ComponentPublicInstance } from 'vue'
+import { computed, watch, onBeforeUnmount, nextTick, type ComponentPublicInstance } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import * as monaco from 'monaco-editor'
 import { useProjectStore } from '../../stores/project'
@@ -86,8 +86,23 @@ const groupedContainers = computed<(Container | ContainerGroup)[]>(() => {
   return result
 })
 
-const activeContainer = ref<Container | null>(null)
-const expandedGroup = ref<string | null>(null)
+const activeContainer = computed<Container | null>(() => {
+  const containerName = store.containerStates[props.data.pod.path]?.activeContainer
+  if (!containerName) return null
+  const containers = props.data.pod.containers ?? []
+  return containers.find((c) => c.name === containerName) ?? null
+})
+
+const expandedGroup = computed<string | null>(() => {
+  const podPath = props.data.pod.path
+  const state = store.containerStates[podPath]
+  if (!state) return null
+  // Return the first expanded group (or could track multiple)
+  for (const groupName of state.expandedGroups) {
+    return groupName
+  }
+  return null
+})
 let editorInstance: monaco.editor.IStandaloneCodeEditor | null = null
 
 function isGroup(item: Container | ContainerGroup): item is ContainerGroup {
@@ -121,24 +136,28 @@ function handleContainerClick(container: Container, event: MouseEvent) {
 
 function handleGroupClick(group: ContainerGroup, event: MouseEvent) {
   event.stopPropagation()
-  if (expandedGroup.value === group.parent.name) {
-    expandedGroup.value = null
-    activeContainer.value = null
-    nextTick(() => store.bumpLayout())
+  const podPath = props.data.pod.path
+  const groupName = group.parent.name
+  if (store.isGroupExpanded(podPath, groupName)) {
+    store.collapseGroup(podPath, groupName)
+    if (store.isContainerActive(podPath, group.parent.name)) {
+      store.deactivateContainer(podPath)
+    }
   } else {
-    expandedGroup.value = group.parent.name
-    activeContainer.value = group.parent
-    nextTick(() => store.bumpLayout())
+    store.expandGroup(podPath, groupName)
+    store.activateContainer(podPath, group.parent.name)
   }
+  nextTick(() => store.bumpLayout())
 }
 
 function toggleCodeView(container: Container) {
-  if (activeContainer.value?.name === container.name) {
-    activeContainer.value = null
+  const podPath = props.data.pod.path
+  if (store.isContainerActive(podPath, container.name)) {
+    store.deactivateContainer(podPath)
     nextTick(() => store.bumpLayout())
     return
   }
-  activeContainer.value = container
+  store.activateContainer(podPath, container.name)
   nextTick(() => store.bumpLayout())
 }
 
@@ -186,8 +205,8 @@ watch(activeContainer, (val) => {
 
 watch(() => props.data.isExpanded, (expanded) => {
   if (!expanded) {
-    activeContainer.value = null
-    expandedGroup.value = null
+    // When pod collapses, deactivate container for this pod
+    store.deactivateContainer(props.data.pod.path)
   }
 })
 
@@ -198,11 +217,12 @@ watch(
     const containers = props.data.pod.containers ?? []
     const match = containers.find((c) => c.name === sc.name)
     if (match) {
-      activeContainer.value = match.sourceCode ? match : sc
+      // Activate the selected container in store
+      store.activateContainer(props.data.pod.path, sc.name)
       const dot = sc.name.indexOf('.')
       if (dot >= 0) {
         const receiver = sc.name.substring(0, dot).replace(/^\*/, '')
-        expandedGroup.value = receiver
+        store.expandGroup(props.data.pod.path, receiver)
       }
     }
   },

@@ -59,6 +59,8 @@ export interface NavigationEntry {
   podPath?: string
   containerName?: string
   expandedPods?: string[]
+  expandedGroups?: Record<string, string[]>
+  activeContainers?: Record<string, string | null>
 }
 
 export interface FloatingTab {

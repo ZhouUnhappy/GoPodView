@@ -28,6 +28,106 @@ export const useProjectStore = defineStore('project', () => {
   const historyIndex = ref(-1)
   const floatingTabs = ref<FloatingTab[]>([])
 
+  // Container 展开状态管理
+  interface PodContainerState {
+    expandedGroups: Set<string>
+    activeContainer: string | null
+  }
+
+  const containerStates = ref<Record<string, PodContainerState>>({})
+
+  function getPodContainerState(podPath: string): PodContainerState {
+    if (!containerStates.value[podPath]) {
+      containerStates.value[podPath] = {
+        expandedGroups: new Set(),
+        activeContainer: null,
+      }
+    }
+    return containerStates.value[podPath]
+  }
+
+  function expandGroup(podPath: string, groupName: string) {
+    const state = getPodContainerState(podPath)
+    const newState = { ...state, expandedGroups: new Set(state.expandedGroups) }
+    newState.expandedGroups.add(groupName)
+    containerStates.value = { ...containerStates.value, [podPath]: newState }
+  }
+
+  function collapseGroup(podPath: string, groupName: string) {
+    const state = containerStates.value[podPath]
+    if (!state) return
+    const newState = { ...state, expandedGroups: new Set(state.expandedGroups) }
+    newState.expandedGroups.delete(groupName)
+    containerStates.value = { ...containerStates.value, [podPath]: newState }
+  }
+
+  function isGroupExpanded(podPath: string, groupName: string): boolean {
+    return containerStates.value[podPath]?.expandedGroups.has(groupName) ?? false
+  }
+
+  function activateContainer(podPath: string, containerName: string) {
+    const state = getPodContainerState(podPath)
+    const newState = { ...state, activeContainer: containerName }
+    containerStates.value = { ...containerStates.value, [podPath]: newState }
+  }
+
+  function deactivateContainer(podPath: string) {
+    const state = containerStates.value[podPath]
+    if (!state) return
+    const newState = { ...state, activeContainer: null }
+    containerStates.value = { ...containerStates.value, [podPath]: newState }
+  }
+
+  function isContainerActive(podPath: string, containerName: string): boolean {
+    return containerStates.value[podPath]?.activeContainer === containerName
+  }
+
+  function snapshotContainerState(): {
+    expandedGroups: Record<string, string[]>
+    activeContainers: Record<string, string | null>
+  } {
+    const expandedGroups: Record<string, string[]> = {}
+    const activeContainers: Record<string, string | null> = {}
+
+    for (const [podPath, state] of Object.entries(containerStates.value)) {
+      if (state.expandedGroups.size > 0) {
+        expandedGroups[podPath] = Array.from(state.expandedGroups)
+      }
+      if (state.activeContainer) {
+        activeContainers[podPath] = state.activeContainer
+      }
+    }
+
+    return { expandedGroups, activeContainers }
+  }
+
+  function restoreContainerState(
+    expandedGroups: Record<string, string[]>,
+    activeContainers: Record<string, string | null>,
+  ) {
+    const newStates: Record<string, PodContainerState> = {}
+
+    for (const [podPath, groups] of Object.entries(expandedGroups)) {
+      if (!newStates[podPath]) {
+        newStates[podPath] = { expandedGroups: new Set(), activeContainer: null }
+      }
+      newStates[podPath].expandedGroups = new Set(groups)
+    }
+
+    for (const [podPath, active] of Object.entries(activeContainers)) {
+      if (!newStates[podPath]) {
+        newStates[podPath] = { expandedGroups: new Set(), activeContainer: null }
+      }
+      newStates[podPath].activeContainer = active
+    }
+
+    containerStates.value = newStates
+  }
+
+  function clearContainerStates() {
+    containerStates.value = {}
+  }
+
   type ViewAction = 'none' | 'focus' | 'expand' | 'jump' | 'code-toggle'
   const lastAction = ref<ViewAction>('none')
   const layoutVersion = ref(0)
@@ -96,6 +196,7 @@ export const useProjectStore = defineStore('project', () => {
     focusedPodPath.value = null
     expandedPods.value = new Set()
     selectedContainer.value = null
+    clearContainerStates()
     navigationHistory.value = [{ level: 'global' }]
     historyIndex.value = 0
   }
@@ -166,6 +267,7 @@ export const useProjectStore = defineStore('project', () => {
     focusedPodPath.value = podPath
     expandedPods.value = new Set()
     selectedContainer.value = null
+    clearContainerStates()
     pushNavigation({ level: 'focused', podPath })
   }
 
@@ -190,10 +292,13 @@ export const useProjectStore = defineStore('project', () => {
     expandedPods.value = newSet
 
     await ensurePodSourceCode(podPath)
+    const { expandedGroups, activeContainers } = snapshotContainerState()
     pushNavigation({
       level: 'expanded',
       podPath: focusedPodPath.value,
       expandedPods: snapshotExpandedPods(focusedPodPath.value),
+      expandedGroups,
+      activeContainers,
     })
   }
 
@@ -221,10 +326,13 @@ export const useProjectStore = defineStore('project', () => {
     }
 
     lastAction.value = 'none'
+    const { expandedGroups, activeContainers } = snapshotContainerState()
     pushNavigation({
       level: 'expanded',
       podPath: focusedPodPath.value,
       expandedPods: snapshotExpandedPods(focusedPodPath.value),
+      expandedGroups,
+      activeContainers,
     })
   }
 
@@ -239,10 +347,13 @@ export const useProjectStore = defineStore('project', () => {
     expandedPods.value = newSet
 
     await ensurePodSourceCode(podPath)
+    const { expandedGroups, activeContainers } = snapshotContainerState()
     pushNavigation({
       level: 'expanded',
       podPath,
       expandedPods: snapshotExpandedPods(podPath),
+      expandedGroups,
+      activeContainers,
     })
   }
 
@@ -275,11 +386,14 @@ export const useProjectStore = defineStore('project', () => {
     focusedPodPath.value = keepCurrentRoot ? layoutRoot : podPath
     const container = await api.getContainer(podPath, containerName)
     selectedContainer.value = container
+    const { expandedGroups, activeContainers } = snapshotContainerState()
     pushNavigation({
       level: 'expanded',
       podPath: keepCurrentRoot ? layoutRoot : podPath,
       containerName,
       expandedPods: snapshotExpandedPods(keepCurrentRoot ? layoutRoot : podPath),
+      expandedGroups,
+      activeContainers,
     })
   }
 
@@ -305,6 +419,10 @@ export const useProjectStore = defineStore('project', () => {
     }
     if (entry.level !== 'expanded') {
       selectedContainer.value = null
+    }
+    // Restore container states
+    if (entry.expandedGroups || entry.activeContainers) {
+      restoreContainerState(entry.expandedGroups ?? {}, entry.activeContainers ?? {})
     }
   }
 
@@ -363,6 +481,29 @@ export const useProjectStore = defineStore('project', () => {
       if (expanded.length > 0) {
         params.set('expanded', expanded.join(','))
       }
+
+      // Add container states to URL
+      const { expandedGroups, activeContainers } = snapshotContainerState()
+
+      const groupEntries: string[] = []
+      for (const [podPath, groups] of Object.entries(expandedGroups)) {
+        for (const group of groups) {
+          groupEntries.push(`${encodeURIComponent(podPath)}:${encodeURIComponent(group)}`)
+        }
+      }
+      if (groupEntries.length > 0) {
+        params.set('groups', groupEntries.join(','))
+      }
+
+      const activeEntries: string[] = []
+      for (const [podPath, container] of Object.entries(activeContainers)) {
+        if (container) {
+          activeEntries.push(`${encodeURIComponent(podPath)}:${encodeURIComponent(container)}`)
+        }
+      }
+      if (activeEntries.length > 0) {
+        params.set('active', activeEntries.join(','))
+      }
     }
 
     const qs = params.toString()
@@ -373,7 +514,13 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   watch(
-    [focusedPodPath, viewLevel, projectPath, () => snapshotExpandedPods(focusedPodPath.value).join('|')],
+    [
+      focusedPodPath,
+      viewLevel,
+      projectPath,
+      () => snapshotExpandedPods(focusedPodPath.value).join('|'),
+      () => JSON.stringify(snapshotContainerState()),
+    ],
     syncUrlState,
   )
 
@@ -383,6 +530,8 @@ export const useProjectStore = defineStore('project', () => {
     const file = params.get('file')
     const level = params.get('level') as ViewLevel | null
     const expandedParam = params.get('expanded')
+    const groupsParam = params.get('groups')
+    const activeParam = params.get('active')
 
     if (!project) return false
 
@@ -421,10 +570,41 @@ export const useProjectStore = defineStore('project', () => {
         focusedPodPath.value = file
         expandedPods.value = new Set(expandedListWithRoot)
         selectedContainer.value = null
+
+        // Restore container states from URL
+        const expandedGroups: Record<string, string[]> = {}
+        const activeContainers: Record<string, string | null> = {}
+
+        if (groupsParam) {
+          for (const entry of groupsParam.split(',')) {
+            const [podPath, groupName] = entry.split(':').map(decodeURIComponent)
+            if (podPath && groupName && podMap.value.has(podPath)) {
+              if (!expandedGroups[podPath]) {
+                expandedGroups[podPath] = []
+              }
+              expandedGroups[podPath].push(groupName)
+            }
+          }
+        }
+
+        if (activeParam) {
+          for (const entry of activeParam.split(',')) {
+            const [podPath, containerName] = entry.split(':').map(decodeURIComponent)
+            if (podPath && containerName && podMap.value.has(podPath)) {
+              activeContainers[podPath] = containerName
+            }
+          }
+        }
+
+        restoreContainerState(expandedGroups, activeContainers)
+
+        const { expandedGroups: snapshotGroups, activeContainers: snapshotActive } = snapshotContainerState()
         navigationHistory.value = [{
           level: 'expanded',
           podPath: file,
           expandedPods: expandedListWithRoot,
+          expandedGroups: snapshotGroups,
+          activeContainers: snapshotActive,
         }]
         historyIndex.value = 0
         syncUrlState()
@@ -471,5 +651,13 @@ export const useProjectStore = defineStore('project', () => {
     openFloatingTab,
     closeFloatingTab,
     restoreFromUrl,
+    // Container state methods
+    containerStates,
+    expandGroup,
+    collapseGroup,
+    isGroupExpanded,
+    activateContainer,
+    deactivateContainer,
+    isContainerActive,
   }
 })

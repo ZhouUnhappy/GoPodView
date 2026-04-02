@@ -507,7 +507,7 @@ function shortMethodName(fullName: string) {
 .card-filename { font-size: 13px; font-weight: 600; color: #303133; }
 .card-filepath { font-size: 10px; color: #909399; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; }
 
-.card-containers { display: flex; flex-direction: column; gap: 2px; max-height: 600px; overflow-y: auto; }
+.card-containers { display: flex; flex-direction: column; gap: 2px; max-height: 1200px; overflow-y: auto; }
 .container-section { display: flex; flex-direction: column; }
 .method-section { padding-left: 16px; }
 

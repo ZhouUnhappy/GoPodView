@@ -60,7 +60,7 @@ export interface NavigationEntry {
   containerName?: string
   expandedPods?: string[]
   expandedGroups?: Record<string, string[]>
-  activeContainers?: Record<string, string | null>
+  activeContainers?: Record<string, string[]>
 }
 
 export interface FloatingTab {

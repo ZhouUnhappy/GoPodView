@@ -31,16 +31,16 @@ export const useProjectStore = defineStore('project', () => {
   // Container 展开状态管理
   interface PodContainerState {
     expandedGroups: Set<string>
-    activeContainer: string | null
+    activeContainers: Set<string>
   }
 
   const containerStates = ref<Record<string, PodContainerState>>({})
 
   function getPodContainerState(podPath: string): PodContainerState {
     if (!containerStates.value[podPath]) {
-      containerStates.value[podPath] = {
+      return {
         expandedGroups: new Set(),
-        activeContainer: null,
+        activeContainers: new Set(),
       }
     }
     return containerStates.value[podPath]
@@ -66,35 +66,46 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function activateContainer(podPath: string, containerName: string) {
-    const state = getPodContainerState(podPath)
-    const newState = { ...state, activeContainer: containerName }
+    const state = containerStates.value[podPath]
+    const activeContainers = state ? new Set(state.activeContainers) : new Set<string>()
+    activeContainers.add(containerName)
+    const newState = state ? { ...state, activeContainers } : { expandedGroups: new Set<string>(), activeContainers }
     containerStates.value = { ...containerStates.value, [podPath]: newState }
   }
 
-  function deactivateContainer(podPath: string) {
+  function deactivateContainer(podPath: string, containerName: string) {
     const state = containerStates.value[podPath]
     if (!state) return
-    const newState = { ...state, activeContainer: null }
+    const newActiveContainers = new Set(state.activeContainers)
+    newActiveContainers.delete(containerName)
+    const newState = { ...state, activeContainers: newActiveContainers }
+    containerStates.value = { ...containerStates.value, [podPath]: newState }
+  }
+
+  function clearActiveContainers(podPath: string) {
+    const state = containerStates.value[podPath]
+    if (!state) return
+    const newState = { ...state, activeContainers: new Set<string>() }
     containerStates.value = { ...containerStates.value, [podPath]: newState }
   }
 
   function isContainerActive(podPath: string, containerName: string): boolean {
-    return containerStates.value[podPath]?.activeContainer === containerName
+    return containerStates.value[podPath]?.activeContainers.has(containerName) ?? false
   }
 
   function snapshotContainerState(): {
     expandedGroups: Record<string, string[]>
-    activeContainers: Record<string, string | null>
+    activeContainers: Record<string, string[]>
   } {
     const expandedGroups: Record<string, string[]> = {}
-    const activeContainers: Record<string, string | null> = {}
+    const activeContainers: Record<string, string[]> = {}
 
     for (const [podPath, state] of Object.entries(containerStates.value)) {
       if (state.expandedGroups.size > 0) {
         expandedGroups[podPath] = Array.from(state.expandedGroups)
       }
-      if (state.activeContainer) {
-        activeContainers[podPath] = state.activeContainer
+      if (state.activeContainers.size > 0) {
+        activeContainers[podPath] = Array.from(state.activeContainers)
       }
     }
 
@@ -103,22 +114,24 @@ export const useProjectStore = defineStore('project', () => {
 
   function restoreContainerState(
     expandedGroups: Record<string, string[]>,
-    activeContainers: Record<string, string | null>,
+    activeContainers: Record<string, string[] | null>,
   ) {
     const newStates: Record<string, PodContainerState> = {}
 
     for (const [podPath, groups] of Object.entries(expandedGroups)) {
       if (!newStates[podPath]) {
-        newStates[podPath] = { expandedGroups: new Set(), activeContainer: null }
+        newStates[podPath] = { expandedGroups: new Set<string>(), activeContainers: new Set<string>() }
       }
       newStates[podPath].expandedGroups = new Set(groups)
     }
 
     for (const [podPath, active] of Object.entries(activeContainers)) {
       if (!newStates[podPath]) {
-        newStates[podPath] = { expandedGroups: new Set(), activeContainer: null }
+        newStates[podPath] = { expandedGroups: new Set<string>(), activeContainers: new Set<string>() }
       }
-      newStates[podPath].activeContainer = active
+      if (active) {
+        newStates[podPath].activeContainers = new Set(active)
+      }
     }
 
     containerStates.value = newStates
@@ -496,8 +509,8 @@ export const useProjectStore = defineStore('project', () => {
       }
 
       const activeEntries: string[] = []
-      for (const [podPath, container] of Object.entries(activeContainers)) {
-        if (container) {
+      for (const [podPath, containers] of Object.entries(activeContainers)) {
+        for (const container of containers) {
           activeEntries.push(`${encodeURIComponent(podPath)}:${encodeURIComponent(container)}`)
         }
       }
@@ -573,7 +586,7 @@ export const useProjectStore = defineStore('project', () => {
 
         // Restore container states from URL
         const expandedGroups: Record<string, string[]> = {}
-        const activeContainers: Record<string, string | null> = {}
+        const activeContainers: Record<string, string[]> = {}
 
         if (groupsParam) {
           for (const entry of groupsParam.split(',')) {
@@ -591,7 +604,10 @@ export const useProjectStore = defineStore('project', () => {
           for (const entry of activeParam.split(',')) {
             const [podPath, containerName] = entry.split(':').map(decodeURIComponent)
             if (podPath && containerName && podMap.value.has(podPath)) {
-              activeContainers[podPath] = containerName
+              if (!activeContainers[podPath]) {
+                activeContainers[podPath] = []
+              }
+              activeContainers[podPath].push(containerName)
             }
           }
         }
@@ -658,6 +674,7 @@ export const useProjectStore = defineStore('project', () => {
     isGroupExpanded,
     activateContainer,
     deactivateContainer,
+    clearActiveContainers,
     isContainerActive,
   }
 })

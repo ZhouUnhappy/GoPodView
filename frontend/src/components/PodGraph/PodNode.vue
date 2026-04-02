@@ -133,12 +133,15 @@ function stopResize() {
   }, 50)
 }
 
-const activeContainer = computed<Container | null>(() => {
-  const containerName = store.containerStates[props.data.pod.path]?.activeContainer
-  if (!containerName) return null
-  const containers = props.data.pod.containers ?? []
-  return containers.find((c) => c.name === containerName) ?? null
+const activeContainerNames = computed<Set<string>>(() => {
+  return store.containerStates[props.data.pod.path]?.activeContainers ?? new Set()
 })
+
+const hasActiveContainer = computed(() => activeContainerNames.value.size > 0)
+
+function isContainerActiveByName(name: string): boolean {
+  return activeContainerNames.value.has(name)
+}
 
 const expandedGroup = computed<string | null>(() => {
   const podPath = props.data.pod.path
@@ -151,15 +154,15 @@ const expandedGroup = computed<string | null>(() => {
   return null
 })
 // 根据是否有展开的容器自动调整卡片宽度
-watch(activeContainer, (container) => {
-  if (container) {
+watch(hasActiveContainer, (hasActive) => {
+  if (hasActive) {
     cardWidth.value = 800
   } else {
     cardWidth.value = 360
   }
 })
 
-let editorInstance: monaco.editor.IStandaloneCodeEditor | null = null
+const editors = new Map<string, monaco.editor.IStandaloneCodeEditor>()
 
 function isGroup(item: Container | ContainerGroup): item is ContainerGroup {
   return 'parent' in item && 'methods' in item
@@ -199,10 +202,11 @@ function handleGroupClick(group: ContainerGroup, event: MouseEvent) {
   event.stopPropagation()
   const podPath = props.data.pod.path
   const groupName = group.parent.name
+  console.log('handleGroupClick:', podPath, groupName, 'isExpanded:', store.isGroupExpanded(podPath, groupName))
   if (store.isGroupExpanded(podPath, groupName)) {
     store.collapseGroup(podPath, groupName)
     if (store.isContainerActive(podPath, group.parent.name)) {
-      store.deactivateContainer(podPath)
+      store.deactivateContainer(podPath, group.parent.name)
     }
   } else {
     store.expandGroup(podPath, groupName)
@@ -213,8 +217,10 @@ function handleGroupClick(group: ContainerGroup, event: MouseEvent) {
 
 function toggleCodeView(container: Container) {
   const podPath = props.data.pod.path
+  console.log('toggleCodeView:', podPath, container.name, 'isActive:', store.isContainerActive(podPath, container.name))
+  console.log('containerStates:', store.containerStates[podPath])
   if (store.isContainerActive(podPath, container.name)) {
-    store.deactivateContainer(podPath)
+    store.deactivateContainer(podPath, container.name)
     nextTick(() => store.bumpLayout())
     return
   }
@@ -238,36 +244,44 @@ function popOutCode(container: Container, event: MouseEvent) {
   store.openFloatingTab(container)
 }
 
-function onEditorMount(el: Element | ComponentPublicInstance | null) {
-  if (!el || !(el instanceof HTMLElement)) return
-  editorInstance?.dispose()
-  editorInstance = monaco.editor.create(el, {
-    value: activeContainer.value?.sourceCode ?? '',
-    language: 'go',
-    theme: 'vs',
-    readOnly: true,
-    minimap: { enabled: false },
-    fontSize: 12,
-    lineNumbers: 'on',
-    scrollBeyondLastLine: false,
-    automaticLayout: true,
-    wordWrap: 'on',
-    padding: { top: 8 },
-    scrollbar: { vertical: 'auto', horizontal: 'auto' },
-  })
+function onEditorMount(container: Container) {
+  return function(el: Element | ComponentPublicInstance | null) {
+    if (!el || !(el instanceof HTMLElement)) return
+    // 如果已存在该容器的编辑器，先销毁
+    const existing = editors.get(container.name)
+    if (existing) {
+      existing.dispose()
+    }
+    const editor = monaco.editor.create(el, {
+      value: container.sourceCode ?? '',
+      language: 'go',
+      theme: 'vs',
+      readOnly: true,
+      minimap: { enabled: false },
+      fontSize: 12,
+      lineNumbers: 'on',
+      scrollBeyondLastLine: false,
+      automaticLayout: true,
+      wordWrap: 'on',
+      padding: { top: 8 },
+      scrollbar: { vertical: 'auto', horizontal: 'auto' },
+    })
+    editors.set(container.name, editor)
+  }
 }
 
-watch(activeContainer, (val) => {
-  if (!val) {
-    editorInstance?.dispose()
-    editorInstance = null
+watch(hasActiveContainer, (hasActive) => {
+  if (!hasActive) {
+    // 清理所有编辑器
+    editors.forEach((editor) => editor.dispose())
+    editors.clear()
   }
 })
 
 watch(() => props.data.isExpanded, (expanded) => {
   if (!expanded) {
-    // When pod collapses, deactivate container for this pod
-    store.deactivateContainer(props.data.pod.path)
+    // When pod collapses, clear all active containers for this pod
+    store.clearActiveContainers(props.data.pod.path)
   }
 })
 
@@ -291,7 +305,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  editorInstance?.dispose()
+  editors.forEach((editor) => editor.dispose())
+  editors.clear()
 })
 
 function shortMethodName(fullName: string) {
@@ -325,7 +340,7 @@ function shortMethodName(fullName: string) {
         <template v-if="isGroup(item)">
           <div
             class="container-item group-header"
-            :class="{ 'container-active': activeContainer?.name === item.parent.name }"
+            :class="{ 'container-active': isContainerActiveByName(item.parent.name) }"
             @click="handleGroupClick(item, $event)"
           >
             <span
@@ -340,12 +355,12 @@ function shortMethodName(fullName: string) {
           </div>
 
           <!-- Struct code -->
-          <div v-if="activeContainer?.name === item.parent.name" class="inline-code" @click.stop>
+          <div v-if="isContainerActiveByName(item.parent.name)" class="inline-code" @click.stop>
             <div class="code-toolbar">
               <div class="code-sig">{{ item.parent.signature }}</div>
               <button class="code-action-btn" @click="popOutCode(item.parent, $event)" title="Pop Out">&#8599;</button>
             </div>
-            <div :ref="onEditorMount" class="code-editor"></div>
+            <div :ref="onEditorMount(item.parent)" class="code-editor"></div>
           </div>
 
           <!-- Methods -->
@@ -357,7 +372,7 @@ function shortMethodName(fullName: string) {
             >
               <div
                 class="container-item method-item"
-                :class="{ 'container-active': activeContainer?.name === m.name }"
+                :class="{ 'container-active': isContainerActiveByName(m.name) }"
                 @click="handleContainerClick(m, $event)"
               >
                 <span class="container-badge" :style="{ background: containerTypeColors.func }">F</span>
@@ -365,12 +380,12 @@ function shortMethodName(fullName: string) {
                 <span class="container-lines">L{{ m.startLine }}-{{ m.endLine }}</span>
               </div>
 
-              <div v-if="activeContainer?.name === m.name" class="inline-code" @click.stop>
+              <div v-if="isContainerActiveByName(m.name)" class="inline-code" @click.stop>
                 <div class="code-toolbar">
                   <div class="code-sig">{{ m.signature }}</div>
                   <button class="code-action-btn" @click="popOutCode(m, $event)" title="Pop Out">&#8599;</button>
                 </div>
-                <div :ref="onEditorMount" class="code-editor"></div>
+                <div :ref="onEditorMount(m)" class="code-editor"></div>
                 <div v-if="m.references?.length" class="code-refs">
                   <div
                     v-for="r in m.references"
@@ -393,7 +408,7 @@ function shortMethodName(fullName: string) {
           <div class="container-section">
             <div
               class="container-item"
-              :class="{ 'container-active': activeContainer?.name === (item as Container).name }"
+              :class="{ 'container-active': isContainerActiveByName((item as Container).name) }"
               @click="handleContainerClick(item as Container, $event)"
             >
               <span
@@ -406,12 +421,12 @@ function shortMethodName(fullName: string) {
               <span class="container-lines">L{{ (item as Container).startLine }}-{{ (item as Container).endLine }}</span>
             </div>
 
-            <div v-if="activeContainer?.name === (item as Container).name" class="inline-code" @click.stop>
+            <div v-if="isContainerActiveByName((item as Container).name)" class="inline-code" @click.stop>
               <div class="code-toolbar">
                 <div class="code-sig">{{ (item as Container).signature }}</div>
                 <button class="code-action-btn" @click="popOutCode(item as Container, $event)" title="Pop Out">&#8599;</button>
               </div>
-              <div :ref="onEditorMount" class="code-editor"></div>
+              <div :ref="onEditorMount(item as Container)" class="code-editor"></div>
               <div v-if="(item as Container).references?.length" class="code-refs">
                 <div
                   v-for="r in (item as Container).references"

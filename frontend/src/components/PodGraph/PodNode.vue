@@ -538,7 +538,7 @@ function shortMethodName(fullName: string) {
 .code-sig { padding: 4px 8px; font-size: 11px; font-family: monospace; color: #606266; white-space: pre; overflow-x: auto; flex: 1; }
 .code-action-btn { border: none; background: transparent; color: #909399; font-size: 13px; cursor: pointer; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; line-height: 1; }
 .code-action-btn:hover { background: #e4e7ed; color: #303133; }
-.code-editor { height: auto; min-height: 50px; max-height: 400px; min-width: 300px; }
+.code-editor { height: auto; min-height: 50px; max-height: 400px; }
 .code-refs { border-top: 1px solid #e4e7ed; padding: 4px 8px; background: #fafafa; }
 .ref-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; font-size: 11px; }
 .ref-item:hover { color: #409eff; }

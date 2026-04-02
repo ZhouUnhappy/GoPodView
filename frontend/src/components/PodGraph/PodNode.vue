@@ -150,6 +150,15 @@ const expandedGroup = computed<string | null>(() => {
   }
   return null
 })
+// 根据是否有展开的容器自动调整卡片宽度
+watch(activeContainer, (container) => {
+  if (container) {
+    cardWidth.value = 800
+  } else {
+    cardWidth.value = 360
+  }
+})
+
 let editorInstance: monaco.editor.IStandaloneCodeEditor | null = null
 
 function isGroup(item: Container | ContainerGroup): item is ContainerGroup {

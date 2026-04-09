@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { Document, Folder } from '@element-plus/icons-vue'
+import { Document, Folder, Minus } from '@element-plus/icons-vue'
 import { useProjectStore } from '../../stores/project'
 import type { FileTreeNode } from '../../types'
 import type { ElTree } from 'element-plus'
@@ -71,6 +71,18 @@ async function syncTreeToFocused() {
   treeRef.value.setCurrentKey(path)
 }
 
+function handleCollapseAll() {
+  if (!treeRef.value) return
+  const nodesMap = treeRef.value.store.nodesMap
+  for (const key of Object.keys(nodesMap)) {
+    const node = nodesMap[key]
+    if (node && node.expanded) {
+      node.collapse()
+    }
+  }
+  syncTreeToFocused()
+}
+
 watch(() => store.projectPath, (newPath) => {
   projectInput.value = newPath
 })
@@ -119,6 +131,17 @@ watch(treeData, async (data) => {
       />
     </div>
 
+    <div v-if="store.fileTree" class="tree-actions">
+      <el-button
+        @click="handleCollapseAll"
+        :disabled="!store.focusedPodPath"
+        size="small"
+        class="collapse-btn"
+      >
+        <span>Collapse All</span>
+      </el-button>
+    </div>
+
     <div v-if="store.loading" class="tree-loading">
       <el-skeleton :rows="8" animated />
     </div>
@@ -163,6 +186,14 @@ watch(treeData, async (data) => {
 
 .tree-search {
   padding: 0 12px 8px;
+}
+
+.tree-actions {
+  padding: 0 12px 8px;
+}
+
+.collapse-btn {
+  width: 100%;
 }
 
 .tree-loading {

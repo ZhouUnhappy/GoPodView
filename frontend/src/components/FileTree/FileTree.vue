@@ -77,6 +77,12 @@ watch(() => store.projectPath, (newPath) => {
 
 watch(() => store.focusedPodPath, syncTreeToFocused)
 
+watch(searchQuery, (value) => {
+  if (treeRef.value) {
+    treeRef.value.filter(value)
+  }
+})
+
 watch(treeData, async (data) => {
   if (data.length > 0 && store.focusedPodPath) {
     await nextTick()

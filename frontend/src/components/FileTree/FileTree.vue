@@ -93,6 +93,7 @@ watch(treeData, async (data) => {
         placeholder="Go project path..."
         size="small"
         clearable
+        class="project-input"
         @keyup.enter="handleLoadProject"
       >
         <template #append>
@@ -200,5 +201,10 @@ watch(treeData, async (data) => {
 
 .file-tree .el-tree-node__content:hover {
   background: rgba(0, 0, 0, 0.04);
+}
+
+.file-tree .project-input .el-input__inner {
+  direction: rtl;
+  text-align: left;
 }
 </style>

@@ -24,7 +24,6 @@ export const useProjectStore = defineStore('project', () => {
   const expandedPods = ref<Set<string>>(new Set())
   const selectedContainer = ref<Container | null>(null)
   const dependencyDepth = ref(1)
-  const showExternalDeps = ref(true)
 
   const navigationHistory = ref<NavigationEntry[]>([])
   const historyIndex = ref(-1)
@@ -488,23 +487,6 @@ export const useProjectStore = defineStore('project', () => {
     dependencyDepth.value = Math.max(1, Math.min(10, depth))
   }
 
-  function setShowExternalDeps(show: boolean) {
-    showExternalDeps.value = show
-
-    if (show) {
-      return
-    }
-
-    if (focusedPodPath.value && podMap.value.get(focusedPodPath.value)?.isExternal) {
-      resetView()
-      return
-    }
-
-    if (selectedContainer.value && podMap.value.get(selectedContainer.value.pod)?.isExternal) {
-      selectedContainer.value = null
-    }
-  }
-
   let tabCounter = 0
   function openFloatingTab(container: Container) {
     const existing = floatingTabs.value.find(
@@ -696,10 +678,8 @@ export const useProjectStore = defineStore('project', () => {
     return true
   }
 
-  function ensurePodVisible(podPath: string) {
-    if (podMap.value.get(podPath)?.isExternal && !showExternalDeps.value) {
-      showExternalDeps.value = true
-    }
+  function ensurePodVisible(_podPath: string) {
+    // External deps are always shown now
   }
 
   function mergePods(nextPods: Pod[]) {
@@ -760,7 +740,6 @@ export const useProjectStore = defineStore('project', () => {
     expandedPods,
     selectedContainer,
     dependencyDepth,
-    showExternalDeps,
     navigationHistory,
     historyIndex,
     podMap,
@@ -779,7 +758,6 @@ export const useProjectStore = defineStore('project', () => {
     goBack,
     goForward,
     setDependencyDepth,
-    setShowExternalDeps,
     openReference,
     floatingTabs,
     openFloatingTab,

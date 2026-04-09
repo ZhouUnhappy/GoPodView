@@ -8,7 +8,6 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import PodNode from './PodNode.vue'
 import FloatingCodeTab from './FloatingCodeTab.vue'
-import DepthControl from '../Controls/DepthControl.vue'
 import { useProjectStore } from '../../stores/project'
 import type { Pod } from '../../types'
 
@@ -70,24 +69,9 @@ const focusedContext = computed<FocusedContext | null>(() => {
   return buildFocusedContext(store.focusedPodPath, graphPods.value, graphEdges.value, store.expandedPods)
 })
 
-const graphPods = computed(() => {
-  if (store.showExternalDeps) {
-    return store.pods
-  }
-  return store.pods.filter((pod) => !pod.isExternal)
-})
+const graphPods = computed(() => store.pods)
 
-const graphEdges = computed(() => {
-  if (store.showExternalDeps) {
-    return store.edges
-  }
-
-  const hiddenPods = new Set(
-    store.pods.filter((pod) => pod.isExternal).map((pod) => pod.path),
-  )
-
-  return store.edges.filter((edge) => !hiddenPods.has(edge.source) && !hiddenPods.has(edge.target))
-})
+const graphEdges = computed(() => store.edges)
 
 const graphPodMap = computed(() => {
   const map = new Map<string, Pod>()
@@ -596,10 +580,6 @@ function normalizePositions(
     >
       <Background />
       <Controls />
-
-      <div class="vue-flow__panel vue-flow__panel-top-left">
-        <DepthControl />
-      </div>
 
       <div class="vue-flow__panel vue-flow__panel-bottom-right">
         <el-button-group size="small">

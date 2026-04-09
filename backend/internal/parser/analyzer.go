@@ -40,8 +40,8 @@ func (a *Analyzer) AnalyzeAll(goFiles []string) error {
 	}
 
 	a.buildPackageIndex()
-	a.buildPodDependencies()
 	a.buildContainerReferences()
+	a.rebuildPodDependencies()
 
 	return nil
 }
@@ -76,31 +76,33 @@ func (a *Analyzer) dirToImportPath(dir string) string {
 	return a.modInfo.ModuleName + "/" + strings.TrimPrefix(dir, "./")
 }
 
-func (a *Analyzer) buildPodDependencies() {
+func (a *Analyzer) rebuildPodDependencies() {
+	for _, pod := range a.parser.Pods {
+		pod.DependsOn = nil
+		pod.DependedBy = nil
+	}
+
 	for relPath, pod := range a.parser.Pods {
-		if pod.IsExternal {
-			continue
-		}
-
-		for _, imp := range pod.Imports {
-			if isStdLib(imp) || a.isExternal(imp) {
-				continue
-			}
-
-			depPkg := a.resolveImport(imp, relPath)
-			if depPkg == "" {
-				continue
-			}
-
-			depPods := a.pkgToPods[depPkg]
-			for _, depPath := range depPods {
-				pod.DependsOn = appendUnique(pod.DependsOn, depPath)
-
-				if depPod, ok := a.parser.Pods[depPath]; ok {
-					depPod.DependedBy = appendUnique(depPod.DependedBy, relPath)
+		for _, container := range pod.Containers {
+			for _, ref := range container.References {
+				if ref == nil || ref.PodPath == "" || ref.PodPath == relPath {
+					continue
 				}
+
+				depPod, ok := a.parser.Pods[ref.PodPath]
+				if !ok {
+					continue
+				}
+
+				pod.DependsOn = appendUnique(pod.DependsOn, depPod.Path)
+				depPod.DependedBy = appendUnique(depPod.DependedBy, relPath)
 			}
 		}
+	}
+
+	for _, pod := range a.parser.Pods {
+		sort.Strings(pod.DependsOn)
+		sort.Strings(pod.DependedBy)
 	}
 }
 

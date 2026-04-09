@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { Document, Folder, Minus } from '@element-plus/icons-vue'
+import { Document, Folder } from '@element-plus/icons-vue'
 import { useProjectStore } from '../../stores/project'
 import type { FileTreeNode } from '../../types'
 import type { ElTree } from 'element-plus'

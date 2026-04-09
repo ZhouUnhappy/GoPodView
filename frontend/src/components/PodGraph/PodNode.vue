@@ -206,6 +206,7 @@ watch(hasActiveContainer, (hasActive) => {
 })
 
 const editors = new Map<string, monaco.editor.IStandaloneCodeEditor>()
+const editorElements = new Map<string, HTMLElement>()
 
 function isGroup(item: Container | ContainerGroup): item is ContainerGroup {
   return 'parent' in item && 'methods' in item
@@ -287,11 +288,20 @@ function popOutCode(container: Container, event: MouseEvent) {
 function onEditorMount(container: Container) {
   return function(el: Element | ComponentPublicInstance | null) {
     if (!el || !(el instanceof HTMLElement)) return
-    // 如果已存在该容器的编辑器，先销毁
+
+    // Check if the element reference has changed
+    const existingElement = editorElements.get(container.name)
+    if (existingElement === el) {
+      // Same element, editor already exists and is valid
+      return
+    }
+
+    // Element changed, dispose old editor if exists
     const existing = editors.get(container.name)
     if (existing) {
       existing.dispose()
     }
+
     const editor = monaco.editor.create(el, {
       value: container.sourceCode ?? '',
       language: 'go',
@@ -315,6 +325,7 @@ function onEditorMount(container: Container) {
     updateHeight()
     editor.onDidContentSizeChange(updateHeight)
     editors.set(container.name, editor)
+    editorElements.set(container.name, el)
   }
 }
 
@@ -323,6 +334,7 @@ watch(hasActiveContainer, (hasActive) => {
     // 清理所有编辑器
     editors.forEach((editor) => editor.dispose())
     editors.clear()
+    editorElements.clear()
   }
 })
 
@@ -355,6 +367,7 @@ watch(
 onBeforeUnmount(() => {
   editors.forEach((editor) => editor.dispose())
   editors.clear()
+  editorElements.clear()
 })
 
 function shortMethodName(fullName: string) {

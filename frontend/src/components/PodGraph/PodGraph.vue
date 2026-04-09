@@ -8,6 +8,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import PodNode from './PodNode.vue'
 import FloatingCodeTab from './FloatingCodeTab.vue'
+import DepthControl from '../Controls/DepthControl.vue'
 import { useProjectStore } from '../../stores/project'
 import type { Pod } from '../../types'
 
@@ -63,33 +64,60 @@ const measuredNodeSizes = computed(() => {
 })
 
 const focusedContext = computed<FocusedContext | null>(() => {
-  if (store.viewLevel === 'global' || !store.focusedPodPath) {
+  if (store.viewLevel === 'global' || !store.focusedPodPath || !graphPodMap.value.has(store.focusedPodPath)) {
     return null
   }
-  return buildFocusedContext(store.focusedPodPath, store.pods, store.edges, store.expandedPods)
+  return buildFocusedContext(store.focusedPodPath, graphPods.value, graphEdges.value, store.expandedPods)
+})
+
+const graphPods = computed(() => {
+  if (store.showExternalDeps) {
+    return store.pods
+  }
+  return store.pods.filter((pod) => !pod.isExternal)
+})
+
+const graphEdges = computed(() => {
+  if (store.showExternalDeps) {
+    return store.edges
+  }
+
+  const hiddenPods = new Set(
+    store.pods.filter((pod) => pod.isExternal).map((pod) => pod.path),
+  )
+
+  return store.edges.filter((edge) => !hiddenPods.has(edge.source) && !hiddenPods.has(edge.target))
+})
+
+const graphPodMap = computed(() => {
+  const map = new Map<string, Pod>()
+  for (const pod of graphPods.value) {
+    map.set(pod.path, pod)
+  }
+  return map
 })
 
 const visiblePodPaths = computed(() => {
   if (!focusedContext.value) {
-    return new Set(store.pods.map((p) => p.path))
+    return new Set(graphPods.value.map((p) => p.path))
   }
   return focusedContext.value.visible
 })
 
 const flowNodes = computed(() => {
-  if (!store.pods.length) return []
+  if (!graphPods.value.length) return []
 
   void store.layoutVersion
   const visible = visiblePodPaths.value
   const isFocusedView = store.viewLevel !== 'global' && store.focusedPodPath
   const nodeSizes = measuredNodeSizes.value
 
-  const globalPositions = layoutNodes(store.pods, store.edges)
+  const globalPositions = layoutNodes(graphPods.value, graphEdges.value)
   const focusedPositions = isFocusedView && focusedContext.value
-    ? layoutFocused(store.focusedPodPath!, focusedContext.value, store.podMap, store.expandedPods, nodeSizes)
+    ? layoutFocused(store.focusedPodPath!, focusedContext.value, graphPodMap.value, store.expandedPods, nodeSizes)
     : null
 
-  return store.pods.map((pod) => {
+  return graphPods.value.map((pod) => {
     const isVisible = visible.has(pod.path)
     const pos = (focusedPositions && isVisible
       ? focusedPositions.get(pod.path)
@@ -103,7 +131,9 @@ const flowNodes = computed(() => {
       data: {
         pod,
         isExpanded: store.isPodExpanded(pod.path),
-        dotColor: pkgColorMap.value.get(pod.package) ?? '#409eff',
+        dotColor: pod.isExternal
+          ? '#7a8699'
+          : (pkgColorMap.value.get(pod.package) ?? '#409eff'),
       },
     }
   })
@@ -111,7 +141,7 @@ const flowNodes = computed(() => {
 
 const flowEdges = computed(() => {
   const visible = visiblePodPaths.value
-  return store.edges
+  return graphEdges.value
     .filter((edge) => visible.has(edge.source) && visible.has(edge.target))
     .map((edge, idx) => ({
       id: `e-${idx}`,
@@ -125,14 +155,30 @@ const flowEdges = computed(() => {
 })
 
 function getEdgeStyle(source: string, target: string) {
+  const sourcePod = graphPodMap.value.get(source)
+  const targetPod = graphPodMap.value.get(target)
+  const isExternalEdge = !!sourcePod?.isExternal || !!targetPod?.isExternal
   const primary = new Set([store.focusedPodPath, ...store.expandedPods])
   if (primary.size === 0 || !store.focusedPodPath) {
-    return { stroke: '#b1b3b8', strokeWidth: 1.5 }
+    return {
+      stroke: isExternalEdge ? '#94a3b8' : '#b1b3b8',
+      strokeWidth: 1.5,
+      strokeDasharray: isExternalEdge ? '6 4' : undefined,
+    }
   }
   if (primary.has(source) || primary.has(target)) {
-    return { stroke: '#409eff', strokeWidth: 2.5 }
+    return {
+      stroke: isExternalEdge ? '#64748b' : '#409eff',
+      strokeWidth: 2.5,
+      strokeDasharray: isExternalEdge ? '6 4' : undefined,
+    }
   }
-  return { stroke: '#b1b3b8', strokeWidth: 1, opacity: 0.4 }
+  return {
+    stroke: isExternalEdge ? '#94a3b8' : '#b1b3b8',
+    strokeWidth: 1,
+    opacity: 0.4,
+    strokeDasharray: isExternalEdge ? '6 4' : undefined,
+  }
 }
 
 function buildFocusedContext(
@@ -534,7 +580,7 @@ function normalizePositions(
 
 <template>
   <div class="pod-graph">
-    <div v-if="!store.pods.length && !store.loading" class="graph-empty">
+    <div v-if="!graphPods.length && !store.loading" class="graph-empty">
       <el-empty description="Load a Go project to view the Pod dependency graph" />
     </div>
 
@@ -550,6 +596,10 @@ function normalizePositions(
     >
       <Background />
       <Controls />
+
+      <div class="vue-flow__panel vue-flow__panel-top-left">
+        <DepthControl />
+      </div>
 
       <div class="vue-flow__panel vue-flow__panel-bottom-right">
         <el-button-group size="small">
@@ -601,6 +651,12 @@ function normalizePositions(
   position: absolute;
   left: 52px;
   bottom: 0px;
+  z-index: 10;
+}
+
+.vue-flow__panel-top-left {
+  top: 12px;
+  left: 12px;
   z-index: 10;
 }
 </style>

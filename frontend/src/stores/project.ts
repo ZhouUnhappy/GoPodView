@@ -23,6 +23,8 @@ export const useProjectStore = defineStore('project', () => {
   const expandedPods = ref<Set<string>>(new Set())
   const selectedContainer = ref<Container | null>(null)
   const dependencyDepth = ref(1)
+  const showExternalDeps = ref(true)
+  const loadedContainerDeps = ref<Set<string>>(new Set())
 
   const navigationHistory = ref<NavigationEntry[]>([])
   const historyIndex = ref(-1)
@@ -181,6 +183,7 @@ export const useProjectStore = defineStore('project', () => {
       fileTree.value = tree
       pods.value = podsData.pods
       edges.value = podsData.edges
+      loadedContainerDeps.value = new Set()
 
       resetView()
     } finally {
@@ -199,6 +202,7 @@ export const useProjectStore = defineStore('project', () => {
       fileTree.value = tree
       pods.value = podsData.pods
       edges.value = podsData.edges
+      loadedContainerDeps.value = new Set()
     } finally {
       loading.value = false
     }
@@ -270,6 +274,8 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function focusPod(podPath: string) {
+    ensurePodVisible(podPath)
+
     if (viewLevel.value === 'focused' && focusedPodPath.value === podPath) {
       expandPod(podPath)
       return
@@ -285,6 +291,8 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   async function expandInlinePod(podPath: string) {
+    ensurePodVisible(podPath)
+
     if (!focusedPodPath.value || podPath === focusedPodPath.value) {
       await expandPod(podPath)
       return
@@ -350,6 +358,8 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   async function expandPod(podPath: string) {
+    ensurePodVisible(podPath)
+
     lastAction.value = 'expand'
     viewLevel.value = 'expanded'
     focusedPodPath.value = podPath
@@ -381,7 +391,25 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  async function loadContainerDependencies(podPath: string, containerName: string) {
+    const key = `${podPath}#${containerName}`
+    if (loadedContainerDeps.value.has(key)) {
+      return
+    }
+
+    const response = await api.getContainerDependencies(podPath, containerName)
+    mergePods(response.pods)
+    mergeEdges(response.edges)
+    replaceContainer(podPath, response.container)
+
+    const next = new Set(loadedContainerDeps.value)
+    next.add(key)
+    loadedContainerDeps.value = next
+  }
+
   async function selectContainer(podPath: string, containerName: string) {
+    ensurePodVisible(podPath)
+
     lastAction.value = 'jump'
     const layoutRoot = focusedPodPath.value ?? podPath
     const keepCurrentRoot = viewLevel.value === 'expanded' && !!focusedPodPath.value
@@ -394,6 +422,7 @@ export const useProjectStore = defineStore('project', () => {
     expandedPods.value = newSet
 
     await ensurePodSourceCode(podPath)
+    await loadContainerDependencies(podPath, containerName)
 
     viewLevel.value = 'expanded'
     focusedPodPath.value = keepCurrentRoot ? layoutRoot : podPath
@@ -441,6 +470,23 @@ export const useProjectStore = defineStore('project', () => {
 
   function setDependencyDepth(depth: number) {
     dependencyDepth.value = Math.max(1, Math.min(10, depth))
+  }
+
+  function setShowExternalDeps(show: boolean) {
+    showExternalDeps.value = show
+
+    if (show) {
+      return
+    }
+
+    if (focusedPodPath.value && podMap.value.get(focusedPodPath.value)?.isExternal) {
+      resetView()
+      return
+    }
+
+    if (selectedContainer.value && podMap.value.get(selectedContainer.value.pod)?.isExternal) {
+      selectedContainer.value = null
+    }
   }
 
   let tabCounter = 0
@@ -563,6 +609,7 @@ export const useProjectStore = defineStore('project', () => {
       fileTree.value = tree
       pods.value = podsData.pods
       edges.value = podsData.edges
+      loadedContainerDeps.value = new Set()
     } finally {
       loading.value = false
     }
@@ -614,6 +661,15 @@ export const useProjectStore = defineStore('project', () => {
 
         restoreContainerState(expandedGroups, activeContainers)
 
+        const pendingLoads: Promise<void>[] = []
+        for (const [podPath, containerNames] of Object.entries(activeContainers)) {
+          if (!podMap.value.has(podPath)) continue
+          for (const containerName of containerNames) {
+            pendingLoads.push(loadContainerDependencies(podPath, containerName))
+          }
+        }
+        await Promise.all(pendingLoads)
+
         const { expandedGroups: snapshotGroups, activeContainers: snapshotActive } = snapshotContainerState()
         navigationHistory.value = [{
           level: 'expanded',
@@ -634,6 +690,59 @@ export const useProjectStore = defineStore('project', () => {
     return true
   }
 
+  function ensurePodVisible(podPath: string) {
+    if (podMap.value.get(podPath)?.isExternal && !showExternalDeps.value) {
+      showExternalDeps.value = true
+    }
+  }
+
+  function mergePods(nextPods: Pod[]) {
+    if (!nextPods.length) {
+      return
+    }
+
+    const existing = new Set(pods.value.map((pod) => pod.path))
+    const additions = nextPods.filter((pod) => !existing.has(pod.path))
+    if (additions.length > 0) {
+      pods.value = [...pods.value, ...additions]
+    }
+  }
+
+  function mergeEdges(nextEdges: PodEdge[]) {
+    if (!nextEdges.length) {
+      return
+    }
+
+    const edgeSet = new Set(edges.value.map((edge) => `${edge.source}->${edge.target}`))
+    const additions = nextEdges.filter((edge) => {
+      const key = `${edge.source}->${edge.target}`
+      if (edgeSet.has(key)) {
+        return false
+      }
+      edgeSet.add(key)
+      return true
+    })
+
+    if (additions.length > 0) {
+      edges.value = [...edges.value, ...additions]
+    }
+  }
+
+  function replaceContainer(podPath: string, container: Container) {
+    const pod = podMap.value.get(podPath)
+    if (!pod) {
+      return
+    }
+
+    const current = pod.containers.find((item) => item.name === container.name)
+    if (current) {
+      Object.assign(current, container)
+      return
+    }
+
+    pod.containers = [...pod.containers, container]
+  }
+
   return {
     projectPath,
     fileTree,
@@ -645,6 +754,7 @@ export const useProjectStore = defineStore('project', () => {
     expandedPods,
     selectedContainer,
     dependencyDepth,
+    showExternalDeps,
     navigationHistory,
     historyIndex,
     podMap,
@@ -663,6 +773,8 @@ export const useProjectStore = defineStore('project', () => {
     goBack,
     goForward,
     setDependencyDepth,
+    setShowExternalDeps,
+    loadContainerDependencies,
     floatingTabs,
     openFloatingTab,
     closeFloatingTab,

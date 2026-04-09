@@ -13,11 +13,12 @@ import (
 )
 
 type Handler struct {
-	mu        sync.RWMutex
-	root      string
-	fileTree  *model.FileTreeNode
-	pods      map[string]*model.Pod
-	pp        *parser.ProjectParser
+	mu       sync.RWMutex
+	root     string
+	fileTree *model.FileTreeNode
+	pods     map[string]*model.Pod
+	pp       *parser.ProjectParser
+	analyzer *parser.Analyzer
 }
 
 func NewHandler(initialRoot string) *Handler {
@@ -46,6 +47,7 @@ func (h *Handler) loadProject(root string) error {
 	h.fileTree = tree
 	h.pods = pp.Pods
 	h.pp = pp
+	h.analyzer = analyzer
 	return nil
 }
 
@@ -99,26 +101,16 @@ func (h *Handler) GetPods(c *gin.Context) {
 		return
 	}
 
-	podList := make([]*model.Pod, 0, len(h.pods))
 	var edges []PodEdge
 
 	for _, pod := range h.pods {
-		podCopy := *pod
-		podCopy.Containers = nil
-		for _, c := range pod.Containers {
-			cc := *c
-			cc.SourceCode = ""
-			podCopy.Containers = append(podCopy.Containers, &cc)
-		}
-		podList = append(podList, &podCopy)
-
 		for _, dep := range pod.DependsOn {
 			edges = append(edges, PodEdge{Source: pod.Path, Target: dep})
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"pods":  podList,
+		"pods":  summarizePods(h.pods),
 		"edges": edges,
 	})
 }
@@ -208,6 +200,46 @@ func (h *Handler) GetDependencies(c *gin.Context) {
 	})
 }
 
+func (h *Handler) GetContainerDependencies(c *gin.Context) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.pods == nil || h.analyzer == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no project loaded"})
+		return
+	}
+
+	path := strings.TrimPrefix(c.Param("path"), "/")
+	name := c.Query("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing container name"})
+		return
+	}
+
+	container, pods, err := h.analyzer.LoadExternalDependenciesForContainer(path, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	edgeSet := make(map[string]bool)
+	edges := make([]PodEdge, 0, len(pods))
+	for _, pod := range pods {
+		key := path + "->" + pod.Path
+		if edgeSet[key] {
+			continue
+		}
+		edgeSet[key] = true
+		edges = append(edges, PodEdge{Source: path, Target: pod.Path})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"container": container,
+		"pods":      summarizePodSlice(pods),
+		"edges":     edges,
+	})
+}
+
 func (h *Handler) collectDeps(pod *model.Pod, depth int, visited map[string]bool, pods *[]*model.Pod, edges *[]PodEdge) {
 	if depth <= 0 || visited[pod.Path] {
 		return
@@ -221,4 +253,31 @@ func (h *Handler) collectDeps(pod *model.Pod, depth int, visited map[string]bool
 			h.collectDeps(depPod, depth-1, visited, pods, edges)
 		}
 	}
+}
+
+func summarizePods(pods map[string]*model.Pod) []*model.Pod {
+	list := make([]*model.Pod, 0, len(pods))
+	for _, pod := range pods {
+		list = append(list, summarizePod(pod))
+	}
+	return list
+}
+
+func summarizePodSlice(pods []*model.Pod) []*model.Pod {
+	list := make([]*model.Pod, 0, len(pods))
+	for _, pod := range pods {
+		list = append(list, summarizePod(pod))
+	}
+	return list
+}
+
+func summarizePod(pod *model.Pod) *model.Pod {
+	podCopy := *pod
+	podCopy.Containers = nil
+	for _, c := range pod.Containers {
+		cc := *c
+		cc.SourceCode = ""
+		podCopy.Containers = append(podCopy.Containers, &cc)
+	}
+	return &podCopy
 }

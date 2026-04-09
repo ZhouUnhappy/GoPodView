@@ -8,6 +8,8 @@ type Pod struct {
 	Containers []*Container `json:"containers"`
 	DependsOn  []string     `json:"dependsOn"`
 	DependedBy []string     `json:"dependedBy"`
+	IsExternal bool         `json:"isExternal"`
+	ModulePath string       `json:"modulePath,omitempty"`
 }
 
 type FileTreeNode struct {

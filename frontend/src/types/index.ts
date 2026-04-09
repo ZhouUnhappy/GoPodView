@@ -26,6 +26,8 @@ export interface Pod {
   containers: Container[]
   dependsOn: string[]
   dependedBy: string[]
+  isExternal?: boolean
+  modulePath?: string
 }
 
 export interface PodEdge {
@@ -48,6 +50,12 @@ export interface PodsResponse {
 export interface DependenciesResponse {
   root: string
   depth: number
+  pods: Pod[]
+  edges: PodEdge[]
+}
+
+export interface ContainerDependenciesResponse {
+  container: Container
   pods: Pod[]
   edges: PodEdge[]
 }

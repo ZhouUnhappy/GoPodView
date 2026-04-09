@@ -7,6 +7,7 @@ import (
 	"go/printer"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -14,28 +15,48 @@ import (
 )
 
 type ProjectParser struct {
-	Root   string
-	fset   *token.FileSet
-	Pods   map[string]*model.Pod
-	srcMap map[string][]byte
+	Root       string
+	fset       *token.FileSet
+	Pods       map[string]*model.Pod
+	srcMap     map[string][]byte
+	sourcePath map[string]string
 }
 
 func NewProjectParser(root string) *ProjectParser {
 	return &ProjectParser{
-		Root:   root,
-		fset:   token.NewFileSet(),
-		Pods:   make(map[string]*model.Pod),
-		srcMap: make(map[string][]byte),
+		Root:       root,
+		fset:       token.NewFileSet(),
+		Pods:       make(map[string]*model.Pod),
+		srcMap:     make(map[string][]byte),
+		sourcePath: make(map[string]string),
 	}
 }
 
 func (p *ProjectParser) ParseFile(relPath string) (*model.Pod, error) {
 	absPath := filepath.Join(p.Root, relPath)
+	return p.parseFile(absPath, relPath, false, "")
+}
+
+func (p *ProjectParser) ParseExternalFile(absPath, displayPath, modulePath string) (*model.Pod, error) {
+	displayPath = path.Clean(displayPath)
+	return p.parseFile(absPath, displayPath, true, modulePath)
+}
+
+func (p *ProjectParser) SourceForPod(podPath string) ([]byte, string, bool) {
+	src, ok := p.srcMap[podPath]
+	if !ok {
+		return nil, "", false
+	}
+	return src, p.sourcePath[podPath], true
+}
+
+func (p *ProjectParser) parseFile(absPath, displayPath string, isExternal bool, modulePath string) (*model.Pod, error) {
 	src, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, err
 	}
-	p.srcMap[relPath] = src
+	p.srcMap[displayPath] = src
+	p.sourcePath[displayPath] = absPath
 
 	f, err := parser.ParseFile(p.fset, absPath, src, parser.ParseComments)
 	if err != nil {
@@ -43,9 +64,11 @@ func (p *ProjectParser) ParseFile(relPath string) (*model.Pod, error) {
 	}
 
 	pod := &model.Pod{
-		Path:     relPath,
-		Package:  f.Name.Name,
-		FileName: filepath.Base(relPath),
+		Path:       displayPath,
+		Package:    f.Name.Name,
+		FileName:   filepath.Base(absPath),
+		IsExternal: isExternal,
+		ModulePath: modulePath,
 	}
 
 	for _, imp := range f.Imports {
@@ -53,8 +76,8 @@ func (p *ProjectParser) ParseFile(relPath string) (*model.Pod, error) {
 		pod.Imports = append(pod.Imports, importPath)
 	}
 
-	pod.Containers = p.extractContainers(f, relPath, src)
-	p.Pods[relPath] = pod
+	pod.Containers = p.extractContainers(f, displayPath, src)
+	p.Pods[displayPath] = pod
 	return pod, nil
 }
 

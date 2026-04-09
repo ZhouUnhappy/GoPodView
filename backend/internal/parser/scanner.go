@@ -31,6 +31,30 @@ func ScanProject(root string) (*model.FileTreeNode, []string, error) {
 	return rootNode, goFiles, nil
 }
 
+func ScanExternalPackage(packageDir string) ([]string, error) {
+	entries, err := os.ReadDir(packageDir)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		files = append(files, filepath.Join(packageDir, name))
+	}
+
+	sort.Strings(files)
+	return files, nil
+}
+
 func buildTree(absPath, root string, node *model.FileTreeNode) error {
 	entries, err := os.ReadDir(absPath)
 	if err != nil {

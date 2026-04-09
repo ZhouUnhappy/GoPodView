@@ -23,6 +23,7 @@ const cardRef = ref<HTMLElement | null>(null)
 const cardWidth = ref<number>(360)
 
 const isFocused = computed(() => store.focusedPodPath === props.data.pod.path)
+const isExternal = computed(() => !!props.data.pod.isExternal)
 
 const containerCount = computed(() => props.data.pod.containers?.length ?? 0)
 
@@ -33,7 +34,20 @@ const dotSize = computed(() => {
 
 const tooltipText = computed(() => {
   const p = props.data.pod
-  return `${p.path}\npkg: ${p.package}\n${containerCount.value} containers`
+  const lines = [`${p.path}`, `pkg: ${p.package}`, `${containerCount.value} containers`]
+  if (p.isExternal && p.modulePath) {
+    lines.push(`module: ${p.modulePath}`)
+  }
+  return lines.join('\n')
+})
+
+const moduleLabel = computed(() => {
+  const modulePath = props.data.pod.modulePath
+  if (!modulePath) return ''
+
+  const parts = modulePath.split('/')
+  if (parts.length <= 2) return modulePath
+  return parts.slice(-2).join('/')
 })
 
 const containerTypeColors: Record<ContainerType, string> = {
@@ -198,11 +212,10 @@ function handleContainerClick(container: Container, event: MouseEvent) {
   toggleCodeView(container)
 }
 
-function handleGroupClick(group: ContainerGroup, event: MouseEvent) {
+async function handleGroupClick(group: ContainerGroup, event: MouseEvent) {
   event.stopPropagation()
   const podPath = props.data.pod.path
   const groupName = group.parent.name
-  console.log('handleGroupClick:', podPath, groupName, 'isExpanded:', store.isGroupExpanded(podPath, groupName))
   if (store.isGroupExpanded(podPath, groupName)) {
     store.collapseGroup(podPath, groupName)
     if (store.isContainerActive(podPath, group.parent.name)) {
@@ -211,20 +224,20 @@ function handleGroupClick(group: ContainerGroup, event: MouseEvent) {
   } else {
     store.expandGroup(podPath, groupName)
     store.activateContainer(podPath, group.parent.name)
+    await store.loadContainerDependencies(podPath, group.parent.name)
   }
   nextTick(() => store.bumpLayout())
 }
 
-function toggleCodeView(container: Container) {
+async function toggleCodeView(container: Container) {
   const podPath = props.data.pod.path
-  console.log('toggleCodeView:', podPath, container.name, 'isActive:', store.isContainerActive(podPath, container.name))
-  console.log('containerStates:', store.containerStates[podPath])
   if (store.isContainerActive(podPath, container.name)) {
     store.deactivateContainer(podPath, container.name)
     nextTick(() => store.bumpLayout())
     return
   }
   store.activateContainer(podPath, container.name)
+  await store.loadContainerDependencies(podPath, container.name)
   nextTick(() => store.bumpLayout())
 }
 
@@ -328,6 +341,7 @@ function shortMethodName(fullName: string) {
     v-if="data.isExpanded"
     ref="cardRef"
     class="pod-card nopan nowheel"
+    :class="{ 'pod-card-external': isExternal }"
     :style="cardStyle"
     @click="handleClick"
   >
@@ -337,8 +351,12 @@ function shortMethodName(fullName: string) {
     <div class="resize-handle" @mousedown="startResize" @click.stop title="Drag to resize"></div>
 
     <div class="card-header">
-      <span class="card-package">{{ data.pod.package }}</span>
+      <div class="card-header-top">
+        <span class="card-package">{{ data.pod.package }}</span>
+        <span v-if="isExternal" class="external-badge">External</span>
+      </div>
       <span class="card-filename">{{ data.pod.fileName }}</span>
+      <span v-if="isExternal && moduleLabel" class="card-module">{{ moduleLabel }}</span>
       <span class="card-filepath" :title="data.pod.path">{{ data.pod.path }}</span>
     </div>
 
@@ -458,6 +476,7 @@ function shortMethodName(fullName: string) {
   <div
     v-else
     class="pod-dot-wrapper"
+    :class="{ 'pod-dot-wrapper-external': isExternal }"
     @click="handleClick"
     :title="tooltipText"
   >
@@ -466,7 +485,7 @@ function shortMethodName(fullName: string) {
 
     <div
       class="pod-dot"
-      :class="{ focused: isFocused }"
+      :class="{ focused: isFocused, external: isExternal }"
       :style="{
         width: dotSize + 'px',
         height: dotSize + 'px',
@@ -478,6 +497,7 @@ function shortMethodName(fullName: string) {
     <span class="dot-label" :class="{ 'label-focused': isFocused }">
       {{ data.pod.fileName }}
     </span>
+    <span v-if="isExternal" class="dot-kind">external</span>
   </div>
 </template>
 
@@ -485,14 +505,18 @@ function shortMethodName(fullName: string) {
 .handle-hidden { opacity: 0 !important; width: 1px !important; height: 1px !important; }
 
 .pod-dot-wrapper { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+.pod-dot-wrapper-external { gap: 3px; }
 .pod-dot { border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.25s ease; border: 2px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.pod-dot.external { border-style: dashed; border-color: rgba(255,255,255,.85); border-radius: 14px; box-shadow: 0 1px 4px rgba(71, 85, 105, .18); }
 .pod-dot:hover { transform: scale(1.15); box-shadow: 0 2px 10px rgba(0,0,0,.2); }
 .pod-dot.focused { border-color: #fff; box-shadow: 0 0 0 3px rgba(64,158,255,.5), 0 2px 10px rgba(0,0,0,.15); transform: scale(1.2); }
 .dot-count { font-size: 10px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
 .dot-label { font-size: 10px; color: #909399; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+.dot-kind { font-size: 9px; line-height: 1; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
 .label-focused { color: #303133; font-weight: 600; font-size: 11px; }
 
 .pod-card { background: #fff; border: 2px solid #409eff; border-radius: 8px; padding: 10px 14px; min-width: 260px; max-width: 800px; cursor: pointer; box-shadow: 0 4px 20px rgba(64,158,255,.2); position: relative; }
+.pod-card-external { border-color: #94a3b8; box-shadow: 0 4px 20px rgba(100, 116, 139, 0.18); background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
 
 .resize-handle {
   position: absolute;
@@ -511,9 +535,12 @@ function shortMethodName(fullName: string) {
 }
 
 .card-header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ebeef5; }
+.card-header-top { display: flex; align-items: center; gap: 6px; }
 .card-package { font-size: 11px; color: #909399; font-weight: 500; }
+.card-module { font-size: 11px; color: #64748b; font-weight: 600; }
 .card-filename { font-size: 13px; font-weight: 600; color: #303133; }
 .card-filepath { font-size: 10px; color: #909399; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; }
+.external-badge { display: inline-flex; align-items: center; justify-content: center; padding: 1px 6px; border-radius: 999px; background: #e2e8f0; color: #475569; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; }
 
 .card-containers { display: flex; flex-direction: column; gap: 2px; max-height: 1200px; overflow-y: auto; }
 .container-section { display: flex; flex-direction: column; }

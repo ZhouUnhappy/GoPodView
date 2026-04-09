@@ -5,30 +5,34 @@ const store = useProjectStore()
 </script>
 
 <template>
-  <div class="depth-control" v-if="store.viewLevel !== 'global'">
-    <span class="depth-label">依赖层级</span>
-    <el-input-number
-      :model-value="store.dependencyDepth"
-      @update:model-value="(val: number | undefined) => store.setDependencyDepth(val ?? 1)"
-      :min="1"
-      :max="10"
-      size="small"
-      controls-position="right"
-      style="width: 100px"
+  <div class="graph-control" v-if="store.pods.length">
+    <span class="control-label">外部依赖</span>
+    <el-switch
+      :model-value="store.showExternalDeps"
+      @update:model-value="(val: boolean) => store.setShowExternalDeps(val)"
+      inline-prompt
+      active-text="开"
+      inactive-text="关"
     />
   </div>
 </template>
 
 <style scoped>
-.depth-control {
+.graph-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(8px);
 }
 
-.depth-label {
+.control-label {
   font-size: 12px;
-  color: #909399;
+  color: #52606d;
+  font-weight: 600;
   white-space: nowrap;
 }
 </style>

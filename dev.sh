@@ -10,7 +10,6 @@ set -e
 
 COMMAND=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/.dev.pid"
 LOG_DIR="$SCRIPT_DIR/.dev/logs"
 
 VITE_PORT=5173
@@ -44,6 +43,17 @@ print_warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
+kill_by_port() {
+    local port=$1
+    local name=$2
+    local pids=$(lsof -Pi :"$port" -sTCP:LISTEN -t 2>/dev/null)
+    if [ -n "$pids" ]; then
+        print_info "Killing $name processes on port $port (PIDs: $pids)"
+        echo "$pids" | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
+}
+
 start_dev() {
     # Validate LOG_DIR
     if [ -z "$LOG_DIR" ]; then
@@ -75,17 +85,11 @@ start_dev() {
     print_info "Frontend: http://localhost:$VITE_PORT"
     print_info "Logs:     $LOG_DIR"
     
-    # Clear old PID file
-    : > "$PID_FILE"
-    
     # Start backend
     print_info "Starting backend..."
     cd "$SCRIPT_DIR/backend"
 	print_info "GO_PARAMS: $GO_PARAMS"
     go run main.go $GO_PARAMS > "$backend_log" 2>&1 &
-    BACKEND_PID=$!
-    echo "$BACKEND_PID" >> "$PID_FILE"
-    print_info "Backend process ID: $BACKEND_PID"
     print_info "Backend log: $backend_log"
     
     # Give backend time to start
@@ -95,48 +99,25 @@ start_dev() {
     print_info "Starting frontend..."
     cd "$SCRIPT_DIR/frontend"
     CI=true VITE_PORT=$VITE_PORT VITE_GO_PORT=$GO_PORT npm run dev > "$frontend_log" 2>&1 &
-    FRONTEND_PID=$!
-    echo "$FRONTEND_PID" >> "$PID_FILE"
-    print_info "Frontend process ID: $FRONTEND_PID"
     print_info "Frontend log: $frontend_log"
     
     print_info "Frontend and backend started in background. Use '$0 stop' to stop them."
 }
 
 stop_dev() {
-    if [ ! -f "$PID_FILE" ]; then
-        print_warn "Process file not found. All processes may already be stopped."
-        return
-    fi
-    
     print_info "Stopping frontend and backend..."
     
-    while IFS= read -r pid; do
-        print_info "Stopping process $pid..."
-        if ps -p "$pid" > /dev/null 2>&1; then
-            print_info "Process $pid is running, sending SIGTERM..."
-            kill "$pid" 2>/dev/null || true
-            
-            # Wait for process to end (max 5 seconds)
-            local count=0
-            while ps -p "$pid" > /dev/null 2>&1 && [ $count -lt 50 ]; do
-                sleep 0.1
-                count=$((count + 1))
-            done
-            
-            if ps -p "$pid" > /dev/null 2>&1; then
-                print_warn "Process $pid did not stop gracefully. Force killing..."
-                kill -9 "$pid" 2>/dev/null || true
-            fi
-        fi
-    done < "$PID_FILE"
+    # Kill by port for reliability (handles child processes)
+    kill_by_port "$GO_PORT" "Backend"
+    kill_by_port "$VITE_PORT" "Frontend"
     
-    rm -f "$PID_FILE"
     print_info "All processes stopped"
 }
 
 restart_dev() {
     stop_dev
+    print_info "Waiting for ports to be released..."
+    sleep 2
     start_dev
 }
 

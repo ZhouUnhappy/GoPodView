@@ -5,6 +5,7 @@ import type {
   Pod,
   PodEdge,
   Container,
+  Reference,
   ViewLevel,
   NavigationEntry,
   FloatingTab,
@@ -24,7 +25,6 @@ export const useProjectStore = defineStore('project', () => {
   const selectedContainer = ref<Container | null>(null)
   const dependencyDepth = ref(1)
   const showExternalDeps = ref(true)
-  const loadedContainerDeps = ref<Set<string>>(new Set())
 
   const navigationHistory = ref<NavigationEntry[]>([])
   const historyIndex = ref(-1)
@@ -183,7 +183,6 @@ export const useProjectStore = defineStore('project', () => {
       fileTree.value = tree
       pods.value = podsData.pods
       edges.value = podsData.edges
-      loadedContainerDeps.value = new Set()
 
       resetView()
     } finally {
@@ -202,7 +201,6 @@ export const useProjectStore = defineStore('project', () => {
       fileTree.value = tree
       pods.value = podsData.pods
       edges.value = podsData.edges
-      loadedContainerDeps.value = new Set()
     } finally {
       loading.value = false
     }
@@ -391,23 +389,7 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  async function loadContainerDependencies(podPath: string, containerName: string) {
-    const key = `${podPath}#${containerName}`
-    if (loadedContainerDeps.value.has(key)) {
-      return
-    }
-
-    const response = await api.getContainerDependencies(podPath, containerName)
-    mergePods(response.pods)
-    mergeEdges(response.edges)
-    replaceContainer(podPath, response.container)
-
-    const next = new Set(loadedContainerDeps.value)
-    next.add(key)
-    loadedContainerDeps.value = next
-  }
-
-  async function selectContainer(podPath: string, containerName: string) {
+  async function selectContainer(podPath: string, containerName: string, preloadedContainer?: Container) {
     ensurePodVisible(podPath)
 
     lastAction.value = 'jump'
@@ -422,11 +404,11 @@ export const useProjectStore = defineStore('project', () => {
     expandedPods.value = newSet
 
     await ensurePodSourceCode(podPath)
-    await loadContainerDependencies(podPath, containerName)
 
     viewLevel.value = 'expanded'
     focusedPodPath.value = keepCurrentRoot ? layoutRoot : podPath
-    const container = await api.getContainer(podPath, containerName)
+    const container = preloadedContainer ?? await api.getContainer(podPath, containerName)
+    replaceContainer(podPath, container)
     selectedContainer.value = container
     const { expandedGroups, activeContainers } = snapshotContainerState()
     pushNavigation({
@@ -437,6 +419,40 @@ export const useProjectStore = defineStore('project', () => {
       expandedGroups,
       activeContainers,
     })
+  }
+
+  async function openReference(sourcePodPath: string, sourceContainerName: string, ref: Reference) {
+    if (!ref.isExternal) {
+      if (!ref.podPath) return
+      await selectContainer(ref.podPath, ref.containerName)
+      return
+    }
+
+    if (!ref.importPath) {
+      return
+    }
+
+    if (ref.podPath) {
+      await selectContainer(ref.podPath, ref.containerName)
+      return
+    }
+
+    const response = await api.getReferenceTarget(
+      sourcePodPath,
+      sourceContainerName,
+      ref.importPath,
+      ref.containerName,
+    )
+
+    mergePods(response.pods)
+    mergeEdges(response.edges)
+    replaceContainer(sourcePodPath, response.sourceContainer)
+    replaceContainer(response.targetContainer.pod, response.targetContainer)
+    await selectContainer(
+      response.targetContainer.pod,
+      response.targetContainer.name,
+      response.targetContainer,
+    )
   }
 
   function goBack() {
@@ -609,7 +625,6 @@ export const useProjectStore = defineStore('project', () => {
       fileTree.value = tree
       pods.value = podsData.pods
       edges.value = podsData.edges
-      loadedContainerDeps.value = new Set()
     } finally {
       loading.value = false
     }
@@ -660,15 +675,6 @@ export const useProjectStore = defineStore('project', () => {
         }
 
         restoreContainerState(expandedGroups, activeContainers)
-
-        const pendingLoads: Promise<void>[] = []
-        for (const [podPath, containerNames] of Object.entries(activeContainers)) {
-          if (!podMap.value.has(podPath)) continue
-          for (const containerName of containerNames) {
-            pendingLoads.push(loadContainerDependencies(podPath, containerName))
-          }
-        }
-        await Promise.all(pendingLoads)
 
         const { expandedGroups: snapshotGroups, activeContainers: snapshotActive } = snapshotContainerState()
         navigationHistory.value = [{
@@ -774,7 +780,7 @@ export const useProjectStore = defineStore('project', () => {
     goForward,
     setDependencyDepth,
     setShowExternalDeps,
-    loadContainerDependencies,
+    openReference,
     floatingTabs,
     openFloatingTab,
     closeFloatingTab,

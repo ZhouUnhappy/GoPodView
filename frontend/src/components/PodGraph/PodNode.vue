@@ -3,7 +3,7 @@ import { computed, watch, onBeforeUnmount, nextTick, type ComponentPublicInstanc
 import { Handle, Position } from '@vue-flow/core'
 import * as monaco from 'monaco-editor'
 import { useProjectStore } from '../../stores/project'
-import type { Pod, Container, ContainerType } from '../../types'
+import type { Pod, Container, ContainerType, Reference } from '../../types'
 
 interface ContainerGroup {
   parent: Container
@@ -224,7 +224,6 @@ async function handleGroupClick(group: ContainerGroup, event: MouseEvent) {
   } else {
     store.expandGroup(podPath, groupName)
     store.activateContainer(podPath, group.parent.name)
-    await store.loadContainerDependencies(podPath, group.parent.name)
   }
   nextTick(() => store.bumpLayout())
 }
@@ -237,19 +236,18 @@ async function toggleCodeView(container: Container) {
     return
   }
   store.activateContainer(podPath, container.name)
-  await store.loadContainerDependencies(podPath, container.name)
   nextTick(() => store.bumpLayout())
 }
 
 async function jumpToRef(container: Container) {
   if (!container.references?.length) return
   const r = container.references[0]
-  store.selectContainer(r.podPath, r.containerName)
+  await store.openReference(container.pod, container.name, r)
 }
 
-function handleRefClick(podPath: string, containerName: string, event: MouseEvent) {
+async function handleRefClick(container: Container, ref: Reference, event: MouseEvent) {
   event.stopPropagation()
-  store.selectContainer(podPath, containerName)
+  await store.openReference(container.pod, container.name, ref)
 }
 
 function popOutCode(container: Container, event: MouseEvent) {
@@ -415,13 +413,14 @@ function shortMethodName(fullName: string) {
                 <div v-if="m.references?.length" class="code-refs">
                   <div
                     v-for="r in m.references"
-                    :key="r.podPath + '#' + r.containerName"
+                    :key="(r.podPath || r.importPath || 'ref') + '#' + r.containerName"
                     class="ref-item"
-                    @click="handleRefClick(r.podPath, r.containerName, $event)"
+                    @click="handleRefClick(m, r, $event)"
                   >
+                    <span v-if="r.isExternal" class="ref-external">external</span>
                     <span class="ref-type">{{ r.type }}</span>
                     <span class="ref-target">{{ r.containerName }}</span>
-                    <span class="ref-pod">{{ r.podPath }}</span>
+                    <span class="ref-pod">{{ r.podPath || r.importPath }}</span>
                   </div>
                 </div>
               </div>
@@ -456,13 +455,14 @@ function shortMethodName(fullName: string) {
               <div v-if="(item as Container).references?.length" class="code-refs">
                 <div
                   v-for="r in (item as Container).references"
-                  :key="r.podPath + '#' + r.containerName"
+                  :key="(r.podPath || r.importPath || 'ref') + '#' + r.containerName"
                   class="ref-item"
-                  @click="handleRefClick(r.podPath, r.containerName, $event)"
+                  @click="handleRefClick(item as Container, r, $event)"
                 >
+                  <span v-if="r.isExternal" class="ref-external">external</span>
                   <span class="ref-type">{{ r.type }}</span>
                   <span class="ref-target">{{ r.containerName }}</span>
-                  <span class="ref-pod">{{ r.podPath }}</span>
+                  <span class="ref-pod">{{ r.podPath || r.importPath }}</span>
                 </div>
               </div>
             </div>
@@ -569,6 +569,7 @@ function shortMethodName(fullName: string) {
 .code-refs { border-top: 1px solid #e4e7ed; padding: 4px 8px; background: #fafafa; }
 .ref-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; font-size: 11px; }
 .ref-item:hover { color: #409eff; }
+.ref-external { font-size: 10px; color: #475569; background: #e2e8f0; padding: 0 5px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
 .ref-type { font-size: 10px; color: #909399; background: #f0f0f0; padding: 0 4px; border-radius: 2px; }
 .ref-target { font-weight: 500; color: #409eff; }
 .ref-pod { color: #c0c4cc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

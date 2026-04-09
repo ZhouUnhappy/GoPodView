@@ -31,6 +31,8 @@ const (
 
 type Reference struct {
 	ContainerName string        `json:"containerName"`
-	PodPath       string        `json:"podPath"`
+	PodPath       string        `json:"podPath,omitempty"`
+	ImportPath    string        `json:"importPath,omitempty"`
+	IsExternal    bool          `json:"isExternal,omitempty"`
 	Type          ReferenceType `json:"type"`
 }

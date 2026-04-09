@@ -5,7 +5,7 @@ import type {
   Pod,
   Container,
   DependenciesResponse,
-  ContainerDependenciesResponse,
+  ReferenceTargetResponse,
 } from '../types'
 
 const http = axios.create({
@@ -52,9 +52,9 @@ export async function getDependencies(path: string, depth: number = 1) {
   return data
 }
 
-export async function getContainerDependencies(path: string, name: string) {
-  const { data } = await http.get<ContainerDependenciesResponse>(`/container-dependencies/${path}`, {
-    params: { name },
+export async function getReferenceTarget(path: string, container: string, importPath: string, target: string) {
+  const { data } = await http.get<ReferenceTargetResponse>(`/reference-target/${path}`, {
+    params: { container, importPath, target },
   })
   return data
 }

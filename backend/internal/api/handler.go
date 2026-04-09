@@ -200,7 +200,7 @@ func (h *Handler) GetDependencies(c *gin.Context) {
 	})
 }
 
-func (h *Handler) GetContainerDependencies(c *gin.Context) {
+func (h *Handler) GetReferenceTarget(c *gin.Context) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -210,13 +210,15 @@ func (h *Handler) GetContainerDependencies(c *gin.Context) {
 	}
 
 	path := strings.TrimPrefix(c.Param("path"), "/")
-	name := c.Query("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing container name"})
+	containerName := c.Query("container")
+	importPath := c.Query("importPath")
+	targetName := c.Query("target")
+	if containerName == "" || importPath == "" || targetName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing reference parameters"})
 		return
 	}
 
-	container, pods, err := h.analyzer.LoadExternalDependenciesForContainer(path, name)
+	sourceContainer, targetContainer, pods, err := h.analyzer.ResolveExternalReferenceTarget(path, containerName, importPath, targetName)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -234,9 +236,10 @@ func (h *Handler) GetContainerDependencies(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"container": container,
-		"pods":      summarizePodSlice(pods),
-		"edges":     edges,
+		"sourceContainer": sourceContainer,
+		"targetContainer": targetContainer,
+		"pods":            summarizePodSlice(pods),
+		"edges":           edges,
 	})
 }
 

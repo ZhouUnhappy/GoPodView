@@ -3,7 +3,9 @@ export type ReferenceType = 'call' | 'type_ref' | 'embed'
 
 export interface Reference {
   containerName: string
-  podPath: string
+  podPath?: string
+  importPath?: string
+  isExternal?: boolean
   type: ReferenceType
 }
 
@@ -54,8 +56,9 @@ export interface DependenciesResponse {
   edges: PodEdge[]
 }
 
-export interface ContainerDependenciesResponse {
-  container: Container
+export interface ReferenceTargetResponse {
+  sourceContainer: Container
+  targetContainer: Container
   pods: Pod[]
   edges: PodEdge[]
 }

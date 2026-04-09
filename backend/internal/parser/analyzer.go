@@ -192,6 +192,40 @@ func (a *Analyzer) findReferences(
 				return true
 			}
 
+			if a.isExternal(importPath) {
+				depPkg := a.resolveImport(importPath, podPath)
+				resolved := false
+				for _, depPod := range a.pkgToPods[depPkg] {
+					containers := containerIndex[depPod]
+					if target, ok := containers[selName]; ok {
+						resolved = true
+						key := depPod + "#" + target.Name
+						if !seen[key] {
+							seen[key] = true
+							refs = append(refs, &model.Reference{
+								ContainerName: target.Name,
+								PodPath:       depPod,
+								ImportPath:    importPath,
+								IsExternal:    true,
+								Type:          referenceTypeForTarget(target),
+							})
+						}
+					}
+				}
+
+				placeholderKey := importPath + "#" + selName
+				if !resolved && !seen[placeholderKey] {
+					seen[placeholderKey] = true
+					refs = append(refs, &model.Reference{
+						ContainerName: selName,
+						ImportPath:    importPath,
+						IsExternal:    true,
+						Type:          model.RefCall,
+					})
+				}
+				return true
+			}
+
 			depPkg := a.resolveImport(importPath, podPath)
 			if depPkg == "" {
 				return true
@@ -203,14 +237,10 @@ func (a *Analyzer) findReferences(
 					key := depPod + "#" + target.Name
 					if !seen[key] {
 						seen[key] = true
-						refType := model.RefCall
-						if target.Type == model.ContainerStruct || target.Type == model.ContainerInterface {
-							refType = model.RefTypeRef
-						}
 						refs = append(refs, &model.Reference{
 							ContainerName: target.Name,
 							PodPath:       depPod,
-							Type:          refType,
+							Type:          referenceTypeForTarget(target),
 						})
 					}
 				}
@@ -237,53 +267,50 @@ func isStdLib(importPath string) bool {
 }
 
 func (a *Analyzer) isExternal(importPath string) bool {
+	if isStdLib(importPath) {
+		return false
+	}
 	if a.modInfo == nil || a.modInfo.ModuleName == "" {
 		return false
 	}
 	return !isImportWithinModule(importPath, a.modInfo.ModuleName)
 }
 
-func (a *Analyzer) LoadExternalDependenciesForContainer(podPath, containerName string) (*model.Container, []*model.Pod, error) {
-	pod := a.parser.Pods[podPath]
-	if pod == nil {
-		return nil, nil, fmt.Errorf("pod not found: %s", podPath)
+func (a *Analyzer) ResolveExternalReferenceTarget(sourcePodPath, sourceContainerName, importPath, targetName string) (*model.Container, *model.Container, []*model.Pod, error) {
+	sourcePod := a.parser.Pods[sourcePodPath]
+	if sourcePod == nil {
+		return nil, nil, nil, fmt.Errorf("pod not found: %s", sourcePodPath)
 	}
 
-	container := findContainerByName(pod, containerName)
-	if container == nil {
-		return nil, nil, fmt.Errorf("container not found: %s", containerName)
+	if findContainerByName(sourcePod, sourceContainerName) == nil {
+		return nil, nil, nil, fmt.Errorf("container not found: %s", sourceContainerName)
 	}
 
-	if pod.IsExternal || a.modInfo == nil {
-		return container, nil, nil
+	if !a.isExternal(importPath) {
+		return nil, nil, nil, fmt.Errorf("reference is not external: %s", importPath)
 	}
 
-	importPaths, err := a.collectExternalImportsForContainer(podPath, container)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if len(importPaths) == 0 {
-		a.refreshPodContainerReferences(podPath, a.buildContainerIndex())
-		return findContainerByName(a.parser.Pods[podPath], containerName), nil, nil
-	}
-
-	for _, importPath := range importPaths {
-		if err := a.ensureExternalPackageLoaded(importPath); err != nil {
-			continue
-		}
+	if err := a.ensureExternalPackageLoaded(importPath); err != nil {
+		return nil, nil, nil, err
 	}
 
 	a.buildPackageIndex()
-	a.refreshPodExternalEdges(podPath, importPaths)
-	externalPods := a.externalPodsForImports(importPaths)
+	a.refreshPodExternalEdges(sourcePodPath, []string{importPath})
+
+	externalPods := a.externalPodsForImports([]string{importPath})
 	containerIndex := a.buildContainerIndex()
-	a.refreshPodContainerReferences(podPath, containerIndex)
+	a.refreshPodContainerReferences(sourcePodPath, containerIndex)
 	for _, pod := range externalPods {
 		a.refreshPodContainerReferences(pod.Path, containerIndex)
 	}
 
-	return findContainerByName(a.parser.Pods[podPath], containerName), externalPods, nil
+	sourceContainer := findContainerByName(a.parser.Pods[sourcePodPath], sourceContainerName)
+	targetContainer := a.findContainerInImport(importPath, targetName)
+	if targetContainer == nil {
+		return sourceContainer, nil, externalPods, fmt.Errorf("external target not found: %s.%s", importPath, targetName)
+	}
+
+	return sourceContainer, targetContainer, externalPods, nil
 }
 
 func (a *Analyzer) buildContainerIndex() map[string]map[string]*model.Container {
@@ -323,57 +350,6 @@ func (a *Analyzer) refreshPodContainerReferences(podPath string, containerIndex 
 	for _, container := range pod.Containers {
 		container.References = a.findReferences(f, fset, container, podPath, importAliases, containerIndex)
 	}
-}
-
-func (a *Analyzer) collectExternalImportsForContainer(podPath string, container *model.Container) ([]string, error) {
-	src, absPath, ok := a.parser.SourceForPod(podPath)
-	if !ok {
-		return nil, nil
-	}
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, absPath, src, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	importAliases := buildImportAliases(f)
-	importSet := make(map[string]struct{})
-
-	ast.Inspect(f, func(n ast.Node) bool {
-		if n == nil {
-			return true
-		}
-
-		pos := fset.Position(n.Pos())
-		if pos.Line < container.StartLine || pos.Line > container.EndLine {
-			return true
-		}
-
-		switch expr := n.(type) {
-		case *ast.SelectorExpr:
-			ident, ok := expr.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-
-			importPath, ok := importAliases[ident.Name]
-			if !ok || !a.isExternal(importPath) {
-				return true
-			}
-
-			importSet[importPath] = struct{}{}
-		}
-
-		return true
-	})
-
-	result := make([]string, 0, len(importSet))
-	for importPath := range importSet {
-		result = append(result, importPath)
-	}
-	sort.Strings(result)
-	return result, nil
 }
 
 func (a *Analyzer) ensureExternalPackageLoaded(importPath string) error {
@@ -455,6 +431,23 @@ func (a *Analyzer) externalPodsForImports(importPaths []string) []*model.Pod {
 	return pods
 }
 
+func (a *Analyzer) findContainerInImport(importPath, targetName string) *model.Container {
+	depPkg := a.resolveImport(importPath, "")
+	if depPkg == "" {
+		return nil
+	}
+
+	for _, depPath := range a.pkgToPods[depPkg] {
+		pod := a.parser.Pods[depPath]
+		target := findContainerByName(pod, targetName)
+		if target != nil {
+			return target
+		}
+	}
+
+	return nil
+}
+
 func findContainerByName(pod *model.Pod, containerName string) *model.Container {
 	if pod == nil {
 		return nil
@@ -465,6 +458,13 @@ func findContainerByName(pod *model.Pod, containerName string) *model.Container 
 		}
 	}
 	return nil
+}
+
+func referenceTypeForTarget(target *model.Container) model.ReferenceType {
+	if target != nil && (target.Type == model.ContainerStruct || target.Type == model.ContainerInterface) {
+		return model.RefTypeRef
+	}
+	return model.RefCall
 }
 
 func appendUnique(slice []string, val string) []string {

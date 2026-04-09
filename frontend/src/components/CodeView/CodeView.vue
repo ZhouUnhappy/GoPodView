@@ -2,6 +2,7 @@
 import { ref, watch, onMounted, onBeforeUnmount, computed } from 'vue'
 import * as monaco from 'monaco-editor'
 import { useProjectStore } from '../../stores/project'
+import type { Reference } from '../../types'
 
 const store = useProjectStore()
 const editorContainer = ref<HTMLElement | null>(null)
@@ -43,8 +44,9 @@ function handleBackToExpanded() {
   }
 }
 
-function handleRefClick(podPath: string, containerName: string) {
-  store.selectContainer(podPath, containerName)
+async function handleRefClick(ref: Reference) {
+  if (!container.value) return
+  await store.openReference(container.value.pod, container.value.name, ref)
 }
 </script>
 
@@ -74,15 +76,18 @@ function handleRefClick(podPath: string, containerName: string) {
       <div class="ref-title">引用</div>
       <div
         v-for="ref in container.references"
-        :key="ref.podPath + '#' + ref.containerName"
+        :key="(ref.podPath || ref.importPath || 'ref') + '#' + ref.containerName"
         class="ref-item"
-        @click="handleRefClick(ref.podPath, ref.containerName)"
+        @click="handleRefClick(ref)"
       >
+        <el-tag v-if="ref.isExternal" size="small" type="info">
+          external
+        </el-tag>
         <el-tag size="small" :type="ref.type === 'call' ? 'primary' : 'warning'">
           {{ ref.type }}
         </el-tag>
         <span class="ref-name">{{ ref.containerName }}</span>
-        <span class="ref-pod">{{ ref.podPath }}</span>
+        <span class="ref-pod">{{ ref.podPath || ref.importPath }}</span>
       </div>
     </div>
   </div>

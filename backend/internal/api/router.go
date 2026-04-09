@@ -26,7 +26,7 @@ func SetupRouter(h *Handler, frontendPort int) *gin.Engine {
 		api.GET("/pod/*path", h.GetPod)
 		api.GET("/containers/*path", h.GetContainers)
 		api.GET("/container/*path", h.GetContainer)
-		api.GET("/container-dependencies/*path", h.GetContainerDependencies)
+		api.GET("/reference-target/*path", h.GetReferenceTarget)
 		api.GET("/dependencies/*path", h.GetDependencies)
 	}
 

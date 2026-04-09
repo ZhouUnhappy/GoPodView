@@ -26,16 +26,22 @@ Click the focused Pod again to expand — see all Containers inside the file. St
 ## Features
 
 - **File Tree** — browse the project directory on the left sidebar; click a file to focus its Pod (the only way to change focus)
+- **File Tree Search** — filter files by name with real-time search
+- **Collapse All** — quickly collapse all expanded nodes in the file tree
+- **URL Parameter Auto-fill** — project path automatically filled from URL parameter
 - **Pod Dependency Graph** — interactive node graph powered by Vue Flow (zoom, pan, drag)
 - **Focus Mode** — select a file in the tree to isolate its Pod with dependencies in a mind-map tree layout
 - **Expand Mode** — click the focused Pod to expand and see its Containers (funcs, structs, interfaces, consts, vars); click any neighbor Pod to expand it inline
 - **Floating Code Tabs** — pop out any code view into independent draggable tabs with Monaco Editor; multiple tabs can be open simultaneously
 - **Inline Code View** — click any Container to preview its source code with Go syntax highlighting
+- **Dynamic Editor Height** — Monaco editor automatically adjusts height based on content size
+- **Multiple Active Containers** — support multiple active containers across different pods
 - **Struct Method Grouping** — methods with receivers are nested under their struct/interface; click to toggle
 - **Pod File Path** — each expanded Pod card displays its full file path in the header
 - **VSCode-style Navigation** — `Cmd+[` back, `Cmd+]` forward, `Cmd+Click` to jump to references
 - **URL State** — current project, focused file, view level, and expanded pods are synced to the URL
 - **Package Coloring** — nodes are colored by package for visual grouping
+- **External Dependencies** — always shown and lazy-loaded on demand for better performance
 - **Fixed Zoom** — navigation actions only pan the camera; zoom is controlled manually
 
 ## Tech Stack
@@ -53,10 +59,18 @@ Click the focused Pod again to expand — see all Containers inside the file. St
 
 ```bash
 # Start backend and frontend in background
-./dev.sh start --go_port 8080 --vite_port 5173
+./dev.sh start [--project <path>] [--go_port <port>] [--vite_port <port>] [--log <dir>]
+
+# Restart services
+./dev.sh restart
 
 # Stop services
 ./dev.sh stop
+```
+
+Example:
+```bash
+./dev.sh start --project /path/to/go/project --go_port 8080 --vite_port 5173
 ```
 
 Open http://localhost:5173 in your browser.
@@ -73,6 +87,7 @@ You can also load a project from the UI — enter a path in the sidebar input an
 | `/api/pod/:path` | GET | Get a single Pod with details |
 | `/api/containers/:path` | GET | Get all Containers in a Pod (with source code) |
 | `/api/container/:path?name=` | GET | Get a specific Container |
+| `/api/reference-target/:path` | GET | Get the target Pod for an external reference (lazy-loaded) |
 | `/api/dependencies/:path?depth=` | GET | Get N-level dependencies |
 
 ## Project Structure

@@ -432,7 +432,7 @@ export const useProjectStore = defineStore('project', () => {
       return
     }
 
-    if (ref.podPath) {
+    if (ref.podPath && podMap.value.has(ref.podPath)) {
       await selectContainer(ref.podPath, ref.containerName)
       return
     }

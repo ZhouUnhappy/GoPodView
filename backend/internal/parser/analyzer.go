@@ -295,22 +295,27 @@ func (a *Analyzer) ResolveExternalReferenceTarget(sourcePodPath, sourceContainer
 	}
 
 	a.buildPackageIndex()
-	a.refreshPodExternalEdges(sourcePodPath, []string{importPath})
-
-	externalPods := a.externalPodsForImports([]string{importPath})
-	containerIndex := a.buildContainerIndex()
-	a.refreshPodContainerReferences(sourcePodPath, containerIndex)
-	for _, pod := range externalPods {
-		a.refreshPodContainerReferences(pod.Path, containerIndex)
-	}
-
-	sourceContainer := findContainerByName(a.parser.Pods[sourcePodPath], sourceContainerName)
 	targetContainer := a.findContainerInImport(importPath, targetName)
 	if targetContainer == nil {
-		return sourceContainer, nil, externalPods, fmt.Errorf("external target not found: %s.%s", importPath, targetName)
+		return findContainerByName(a.parser.Pods[sourcePodPath], sourceContainerName), nil, nil, fmt.Errorf("external target not found: %s.%s", importPath, targetName)
 	}
 
-	return sourceContainer, targetContainer, externalPods, nil
+	targetPod := a.parser.Pods[targetContainer.Pod]
+	if targetPod == nil {
+		return nil, nil, nil, fmt.Errorf("target pod not found: %s", targetContainer.Pod)
+	}
+
+	a.refreshPodExternalEdge(sourcePodPath, targetPod.Path)
+	containerIndex := a.buildContainerIndex()
+	sourceContainer := findContainerByName(a.parser.Pods[sourcePodPath], sourceContainerName)
+	if sourceContainer == nil {
+		return nil, nil, nil, fmt.Errorf("container not found after refresh: %s", sourceContainerName)
+	}
+
+	a.patchExternalReference(sourceContainer, importPath, targetName, targetPod.Path, referenceTypeForTarget(targetContainer))
+	a.refreshPodContainerReferences(targetPod.Path, containerIndex)
+
+	return sourceContainer, targetContainer, []*model.Pod{targetPod}, nil
 }
 
 func (a *Analyzer) buildContainerIndex() map[string]map[string]*model.Container {
@@ -376,28 +381,19 @@ func (a *Analyzer) ensureExternalPackageLoaded(importPath string) error {
 	return nil
 }
 
-func (a *Analyzer) refreshPodExternalEdges(podPath string, importPaths []string) {
+func (a *Analyzer) refreshPodExternalEdge(podPath, targetPodPath string) {
 	pod := a.parser.Pods[podPath]
 	if pod == nil {
 		return
 	}
 
-	for _, importPath := range importPaths {
-		depPkg := a.resolveImport(importPath, podPath)
-		if depPkg == "" {
-			continue
-		}
-
-		for _, depPath := range a.pkgToPods[depPkg] {
-			depPod := a.parser.Pods[depPath]
-			if depPod == nil || !depPod.IsExternal {
-				continue
-			}
-
-			pod.DependsOn = appendUnique(pod.DependsOn, depPath)
-			depPod.DependedBy = appendUnique(depPod.DependedBy, podPath)
-		}
+	depPod := a.parser.Pods[targetPodPath]
+	if depPod == nil || !depPod.IsExternal {
+		return
 	}
+
+	pod.DependsOn = appendUnique(pod.DependsOn, targetPodPath)
+	depPod.DependedBy = appendUnique(depPod.DependedBy, podPath)
 }
 
 func (a *Analyzer) externalPodsForImports(importPaths []string) []*model.Pod {
@@ -446,6 +442,23 @@ func (a *Analyzer) findContainerInImport(importPath, targetName string) *model.C
 	}
 
 	return nil
+}
+
+func (a *Analyzer) patchExternalReference(container *model.Container, importPath, targetName, podPath string, refType model.ReferenceType) {
+	if container == nil {
+		return
+	}
+
+	for _, ref := range container.References {
+		if ref == nil {
+			continue
+		}
+		if ref.IsExternal && ref.ImportPath == importPath && ref.ContainerName == targetName {
+			ref.PodPath = podPath
+			ref.Type = refType
+			return
+		}
+	}
 }
 
 func findContainerByName(pod *model.Pod, containerName string) *model.Container {

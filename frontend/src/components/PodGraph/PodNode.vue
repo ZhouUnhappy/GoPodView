@@ -19,7 +19,8 @@ const props = defineProps<{
 }>()
 
 const store = useProjectStore()
-const cardRef = ref<HTMLElement | null>(null)
+const shellRef = ref<HTMLElement | null>(null)
+const layoutWidth = ref<number>(360)
 const cardWidth = ref<number>(360)
 
 const isFocused = computed(() => store.focusedPodPath === props.data.pod.path)
@@ -102,25 +103,45 @@ const groupedContainers = computed<(Container | ContainerGroup)[]>(() => {
   return result
 })
 
-const cardStyle = computed(() => {
-  const baseWidth = cardWidth.value
+const cardOffsetX = computed(() => layoutWidth.value - cardWidth.value)
+
+const shellStyle = computed(() => {
   return {
-    width: baseWidth + 'px',
+    width: layoutWidth.value + 'px',
     minWidth: '260px',
     maxWidth: '800px'
   }
 })
 
+const cardStyle = computed(() => {
+  return {
+    width: cardWidth.value + 'px',
+    left: cardOffsetX.value + 'px',
+    minWidth: '260px',
+    maxWidth: '800px'
+  }
+})
+
+type ResizeDirection = 'left' | 'right'
+
 let isResizing = false
 let startX = 0
-let startWidth = 0
+let startLayoutWidth = 0
+let startCardWidth = 0
 let hasDragged = false
+let resizeDirection: ResizeDirection = 'right'
 
-function startResize(e: MouseEvent) {
+function clampCardWidth(width: number) {
+  return Math.max(260, Math.min(800, width))
+}
+
+function startResize(direction: ResizeDirection, e: MouseEvent) {
   isResizing = true
   hasDragged = false
+  resizeDirection = direction
   startX = e.clientX
-  startWidth = cardRef.value?.offsetWidth || 360
+  startLayoutWidth = shellRef.value?.offsetWidth || layoutWidth.value || 360
+  startCardWidth = cardWidth.value
   document.addEventListener('mousemove', handleResize)
   document.addEventListener('mouseup', stopResize)
   e.preventDefault()
@@ -133,8 +154,14 @@ function handleResize(e: MouseEvent) {
   if (Math.abs(deltaX) > 3) {
     hasDragged = true
   }
-  const newWidth = Math.max(260, Math.min(800, startWidth + deltaX))
-  cardWidth.value = newWidth
+
+  if (resizeDirection === 'left') {
+    cardWidth.value = clampCardWidth(startCardWidth - deltaX)
+    return
+  }
+
+  layoutWidth.value = clampCardWidth(startLayoutWidth + deltaX)
+  cardWidth.value = clampCardWidth(startCardWidth + deltaX)
 }
 
 function stopResize() {
@@ -170,8 +197,10 @@ const expandedGroup = computed<string | null>(() => {
 // 根据是否有展开的容器自动调整卡片宽度
 watch(hasActiveContainer, (hasActive) => {
   if (hasActive) {
+    layoutWidth.value = 800
     cardWidth.value = 800
   } else {
+    layoutWidth.value = 360
     cardWidth.value = 360
   }
 })
@@ -337,85 +366,142 @@ function shortMethodName(fullName: string) {
 <template>
   <div
     v-if="data.isExpanded"
-    ref="cardRef"
-    class="pod-card nopan nowheel"
-    :class="{ 'pod-card-external': isExternal }"
-    :style="cardStyle"
-    @click="handleClick"
+    ref="shellRef"
+    class="pod-card-shell nopan nowheel"
+    :style="shellStyle"
   >
     <Handle type="target" :position="Position.Left" class="handle-hidden" />
     <Handle type="source" :position="Position.Right" class="handle-hidden" />
 
-    <div class="resize-handle" @mousedown="startResize" @click.stop title="Drag to resize"></div>
+    <div
+      class="pod-card"
+      :class="{ 'pod-card-external': isExternal }"
+      :style="cardStyle"
+      @click="handleClick"
+    >
+      <div
+        class="resize-handle resize-handle-left"
+        @mousedown="startResize('left', $event)"
+        @click.stop
+        title="Drag to resize"
+      ></div>
+      <div
+        class="resize-handle resize-handle-right"
+        @mousedown="startResize('right', $event)"
+        @click.stop
+        title="Drag to resize"
+      ></div>
 
-    <div class="card-header">
-      <div class="card-header-top">
-        <span class="card-package">{{ data.pod.package }}</span>
-        <span v-if="isExternal" class="external-badge">External</span>
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="card-package">{{ data.pod.package }}</span>
+          <span v-if="isExternal" class="external-badge">External</span>
+        </div>
+        <span class="card-filename">{{ data.pod.fileName }}</span>
+        <span v-if="isExternal && moduleLabel" class="card-module">{{ moduleLabel }}</span>
+        <span class="card-filepath" :title="data.pod.path">{{ data.pod.path }}</span>
       </div>
-      <span class="card-filename">{{ data.pod.fileName }}</span>
-      <span v-if="isExternal && moduleLabel" class="card-module">{{ moduleLabel }}</span>
-      <span class="card-filepath" :title="data.pod.path">{{ data.pod.path }}</span>
-    </div>
 
-    <div class="card-containers">
-      <template v-for="item in groupedContainers" :key="isGroup(item) ? item.parent.name : item.name">
-        <!-- Struct/Interface group -->
-        <template v-if="isGroup(item)">
-          <div
-            class="container-item group-header"
-            :class="{ 'container-active': isContainerActiveByName(item.parent.name) }"
-            @click="handleGroupClick(item, $event)"
-          >
-            <span
-              class="container-badge"
-              :style="{ background: containerTypeColors[item.parent.type] }"
-            >
-              {{ item.parent.type.charAt(0).toUpperCase() }}
-            </span>
-            <span class="container-name" :title="item.parent.signature">{{ item.parent.name }}</span>
-            <span class="method-count">{{ item.methods.length }}m</span>
-            <span class="expand-arrow" :class="{ rotated: expandedGroup === item.parent.name }">&#9654;</span>
-          </div>
-
-          <!-- Struct code -->
-          <div v-if="isContainerActiveByName(item.parent.name)" class="inline-code" @click.stop>
-            <div class="code-toolbar">
-              <div class="code-sig">{{ item.parent.signature }}</div>
-              <button class="code-action-btn" @click="popOutCode(item.parent, $event)" title="Pop Out">&#8599;</button>
-            </div>
-            <div :ref="onEditorMount(item.parent)" class="code-editor"></div>
-          </div>
-
-          <!-- Methods -->
-          <template v-if="expandedGroup === item.parent.name">
+      <div class="card-containers">
+        <template v-for="item in groupedContainers" :key="isGroup(item) ? item.parent.name : item.name">
+          <!-- Struct/Interface group -->
+          <template v-if="isGroup(item)">
             <div
-              v-for="m in item.methods"
-              :key="m.name"
-              class="container-section method-section"
+              class="container-item group-header"
+              :class="{ 'container-active': isContainerActiveByName(item.parent.name) }"
+              @click="handleGroupClick(item, $event)"
             >
-              <div
-                class="container-item method-item"
-                :class="{ 'container-active': isContainerActiveByName(m.name) }"
-                @click="handleContainerClick(m, $event)"
+              <span
+                class="container-badge"
+                :style="{ background: containerTypeColors[item.parent.type] }"
               >
-                <span class="container-badge" :style="{ background: containerTypeColors.func }">F</span>
-                <span class="container-name" :title="m.signature">{{ shortMethodName(m.name) }}</span>
-                <span class="container-lines">L{{ m.startLine }}-{{ m.endLine }}</span>
+                {{ item.parent.type.charAt(0).toUpperCase() }}
+              </span>
+              <span class="container-name" :title="item.parent.signature">{{ item.parent.name }}</span>
+              <span class="method-count">{{ item.methods.length }}m</span>
+              <span class="expand-arrow" :class="{ rotated: expandedGroup === item.parent.name }">&#9654;</span>
+            </div>
+
+            <!-- Struct code -->
+            <div v-if="isContainerActiveByName(item.parent.name)" class="inline-code" @click.stop>
+              <div class="code-toolbar">
+                <div class="code-sig">{{ item.parent.signature }}</div>
+                <button class="code-action-btn" @click="popOutCode(item.parent, $event)" title="Pop Out">&#8599;</button>
+              </div>
+              <div :ref="onEditorMount(item.parent)" class="code-editor"></div>
+            </div>
+
+            <!-- Methods -->
+            <template v-if="expandedGroup === item.parent.name">
+              <div
+                v-for="m in item.methods"
+                :key="m.name"
+                class="container-section method-section"
+              >
+                <div
+                  class="container-item method-item"
+                  :class="{ 'container-active': isContainerActiveByName(m.name) }"
+                  @click="handleContainerClick(m, $event)"
+                >
+                  <span class="container-badge" :style="{ background: containerTypeColors.func }">F</span>
+                  <span class="container-name" :title="m.signature">{{ shortMethodName(m.name) }}</span>
+                  <span class="container-lines">L{{ m.startLine }}-{{ m.endLine }}</span>
+                </div>
+
+                <div v-if="isContainerActiveByName(m.name)" class="inline-code" @click.stop>
+                  <div class="code-toolbar">
+                    <div class="code-sig">{{ m.signature }}</div>
+                    <button class="code-action-btn" @click="popOutCode(m, $event)" title="Pop Out">&#8599;</button>
+                  </div>
+                  <div :ref="onEditorMount(m)" class="code-editor"></div>
+                  <div v-if="m.references?.length" class="code-refs">
+                    <div
+                      v-for="r in m.references"
+                      :key="(r.podPath || r.importPath || 'ref') + '#' + r.containerName"
+                      class="ref-item"
+                      @click="handleRefClick(m, r, $event)"
+                    >
+                      <span v-if="r.isExternal" class="ref-external">external</span>
+                      <span class="ref-type">{{ r.type }}</span>
+                      <span class="ref-target">{{ r.containerName }}</span>
+                      <span class="ref-pod">{{ r.podPath || r.importPath }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+
+          <!-- Standalone container -->
+          <template v-else>
+            <div class="container-section">
+              <div
+                class="container-item"
+                :class="{ 'container-active': isContainerActiveByName((item as Container).name) }"
+                @click="handleContainerClick(item as Container, $event)"
+              >
+                <span
+                  class="container-badge"
+                  :style="{ background: containerTypeColors[(item as Container).type] }"
+                >
+                  {{ (item as Container).type.charAt(0).toUpperCase() }}
+                </span>
+                <span class="container-name" :title="(item as Container).signature">{{ (item as Container).name }}</span>
+                <span class="container-lines">L{{ (item as Container).startLine }}-{{ (item as Container).endLine }}</span>
               </div>
 
-              <div v-if="isContainerActiveByName(m.name)" class="inline-code" @click.stop>
+              <div v-if="isContainerActiveByName((item as Container).name)" class="inline-code" @click.stop>
                 <div class="code-toolbar">
-                  <div class="code-sig">{{ m.signature }}</div>
-                  <button class="code-action-btn" @click="popOutCode(m, $event)" title="Pop Out">&#8599;</button>
+                  <div class="code-sig">{{ (item as Container).signature }}</div>
+                  <button class="code-action-btn" @click="popOutCode(item as Container, $event)" title="Pop Out">&#8599;</button>
                 </div>
-                <div :ref="onEditorMount(m)" class="code-editor"></div>
-                <div v-if="m.references?.length" class="code-refs">
+                <div :ref="onEditorMount(item as Container)" class="code-editor"></div>
+                <div v-if="(item as Container).references?.length" class="code-refs">
                   <div
-                    v-for="r in m.references"
+                    v-for="r in (item as Container).references"
                     :key="(r.podPath || r.importPath || 'ref') + '#' + r.containerName"
                     class="ref-item"
-                    @click="handleRefClick(m, r, $event)"
+                    @click="handleRefClick(item as Container, r, $event)"
                   >
                     <span v-if="r.isExternal" class="ref-external">external</span>
                     <span class="ref-type">{{ r.type }}</span>
@@ -427,48 +513,7 @@ function shortMethodName(fullName: string) {
             </div>
           </template>
         </template>
-
-        <!-- Standalone container -->
-        <template v-else>
-          <div class="container-section">
-            <div
-              class="container-item"
-              :class="{ 'container-active': isContainerActiveByName((item as Container).name) }"
-              @click="handleContainerClick(item as Container, $event)"
-            >
-              <span
-                class="container-badge"
-                :style="{ background: containerTypeColors[(item as Container).type] }"
-              >
-                {{ (item as Container).type.charAt(0).toUpperCase() }}
-              </span>
-              <span class="container-name" :title="(item as Container).signature">{{ (item as Container).name }}</span>
-              <span class="container-lines">L{{ (item as Container).startLine }}-{{ (item as Container).endLine }}</span>
-            </div>
-
-            <div v-if="isContainerActiveByName((item as Container).name)" class="inline-code" @click.stop>
-              <div class="code-toolbar">
-                <div class="code-sig">{{ (item as Container).signature }}</div>
-                <button class="code-action-btn" @click="popOutCode(item as Container, $event)" title="Pop Out">&#8599;</button>
-              </div>
-              <div :ref="onEditorMount(item as Container)" class="code-editor"></div>
-              <div v-if="(item as Container).references?.length" class="code-refs">
-                <div
-                  v-for="r in (item as Container).references"
-                  :key="(r.podPath || r.importPath || 'ref') + '#' + r.containerName"
-                  class="ref-item"
-                  @click="handleRefClick(item as Container, r, $event)"
-                >
-                  <span v-if="r.isExternal" class="ref-external">external</span>
-                  <span class="ref-type">{{ r.type }}</span>
-                  <span class="ref-target">{{ r.containerName }}</span>
-                  <span class="ref-pod">{{ r.podPath || r.importPath }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-      </template>
+      </div>
     </div>
   </div>
 
@@ -515,18 +560,28 @@ function shortMethodName(fullName: string) {
 .dot-kind { font-size: 9px; line-height: 1; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
 .label-focused { color: #303133; font-weight: 600; font-size: 11px; }
 
+.pod-card-shell { position: relative; min-width: 260px; max-width: 800px; }
 .pod-card { background: #fff; border: 2px solid #409eff; border-radius: 8px; padding: 10px 14px; min-width: 260px; max-width: 800px; cursor: pointer; box-shadow: 0 4px 20px rgba(64,158,255,.2); position: relative; }
 .pod-card-external { border-color: #94a3b8; box-shadow: 0 4px 20px rgba(100, 116, 139, 0.18); background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
 
 .resize-handle {
   position: absolute;
-  right: 0;
   top: 0;
   bottom: 0;
   width: 6px;
   cursor: col-resize;
   background: transparent;
   transition: background 0.2s;
+  z-index: 1;
+}
+
+.resize-handle-left {
+  left: 0;
+  border-radius: 6px 0 0 6px;
+}
+
+.resize-handle-right {
+  right: 0;
   border-radius: 0 6px 6px 0;
 }
 

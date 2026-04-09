@@ -11,7 +11,7 @@ const emit = defineEmits<{
 
 const store = useProjectStore()
 const searchQuery = ref('')
-const projectInput = ref('')
+const projectInput = ref(store.projectPath)
 const treeRef = ref<InstanceType<typeof ElTree>>()
 
 const treeData = computed(() => {
@@ -70,6 +70,10 @@ async function syncTreeToFocused() {
   }
   treeRef.value.setCurrentKey(path)
 }
+
+watch(() => store.projectPath, (newPath) => {
+  projectInput.value = newPath
+})
 
 watch(() => store.focusedPodPath, syncTreeToFocused)
 
